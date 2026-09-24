@@ -25,10 +25,20 @@ interface Frequencia {
   user_id?: string;
 }
 
+interface Plano {
+  id?: string | number;
+  nome: string;
+  duracao_meses: number; // 1, 3, 6 ou 12
+  valor_total: number;
+  descricao?: string;
+  user_id?: string;
+}
+
 export default function Home() {
   const [session, setSession] = useState<Session | null>(null);
   const [alunos, setAlunos] = useState<Aluno[]>([]);
   const [frequencias, setFrequencias] = useState<Frequencia[]>([]);
+  const [planos, setPlanos] = useState<Plano[]>([]);
   const [carregando, setCarregando] = useState(false);
   const [abaAtiva, setAbaAtiva] = useState<string>('Painel');
   const [busca, setBusca] = useState<string>('');
@@ -45,6 +55,12 @@ export default function Home() {
   const [diaVencimento, setDiaVencimento] = useState('10');
   const [statusPagamento, setStatusPagamento] = useState<'Em Dia' | 'Pendente' | 'Atrasado'>('Em Dia');
   const [graduacao, setGraduacao] = useState('Iniciante');
+
+  // Form Plano
+  const [nomePlanoForm, setNomePlanoForm] = useState('');
+  const [duracaoMesesForm, setDuracaoMesesForm] = useState<number>(1);
+  const [valorTotalForm, setValorTotalForm] = useState('120.00');
+  const [descricaoPlanoForm, setDescricaoPlanoForm] = useState('');
 
   // Auth
   const [email, setEmail] = useState('');
@@ -82,6 +98,24 @@ export default function Home() {
       .eq('user_id', session.user.id);
 
     if (dataFreq) setFrequencias(dataFreq);
+
+    // Planos
+    const { data: dataPlanos } = await supabase
+      .from('planos')
+      .select('*')
+      .eq('user_id', session.user.id);
+
+    if (dataPlanos) {
+      setPlanos(dataPlanos);
+    } else {
+      // Planos padrão de exemplo caso a tabela esteja vazia
+      setPlanos([
+        { id: '1', nome: 'Plano Mensal', duracao_meses: 1, valor_total: 120.00, descricao: 'Acesso total de 1 mês' },
+        { id: '2', nome: 'Plano Trimestral', duracao_meses: 3, valor_total: 330.00, descricao: 'Desconto equivalente a R$ 110/mês' },
+        { id: '3', nome: 'Plano Semestral', duracao_meses: 6, valor_total: 600.00, descricao: 'Desconto equivalente a R$ 100/mês' },
+        { id: '4', nome: 'Plano Anual VIP', duracao_meses: 12, valor_total: 1080.00, descricao: 'Melhor valor: R$ 90/mês' },
+      ]);
+    }
   }
 
   useEffect(() => {
@@ -89,6 +123,7 @@ export default function Home() {
     else {
       setAlunos([]);
       setFrequencias([]);
+      setPlanos([]);
     }
   }, [session]);
 
@@ -114,6 +149,51 @@ export default function Home() {
 
     if (error) alert('Erro ao registrar presença: ' + error.message);
     else carregarDados();
+  }
+
+  // Cadastrar Plano
+  async function handleCadastrarPlano(e: React.FormEvent) {
+    e.preventDefault();
+    if (!session?.user?.id || !nomePlanoForm.trim()) return;
+
+    setCarregando(true);
+    const { error } = await supabase.from('planos').insert([
+      {
+        nome: nomePlanoForm,
+        duracao_meses: Number(duracaoMesesForm),
+        valor_total: parseFloat(valorTotalForm) || 0,
+        descricao: descricaoPlanoForm,
+        user_id: session.user.id
+      }
+    ]);
+    setCarregando(false);
+
+    if (error) {
+      // Fallback local se a tabela planos ainda não existir no Supabase
+      const novoPlano: Plano = {
+        id: Date.now().toString(),
+        nome: nomePlanoForm,
+        duracao_meses: Number(duracaoMesesForm),
+        valor_total: parseFloat(valorTotalForm) || 0,
+        descricao: descricaoPlanoForm
+      };
+      setPlanos([...planos, novoPlano]);
+    } else {
+      carregarDados();
+    }
+
+    setNomePlanoForm('');
+    setDescricaoPlanoForm('');
+  }
+
+  async function handleEliminarPlano(id?: string | number) {
+    if (!id || !confirm('Deseja eliminar este plano?')) return;
+    const { error } = await supabase.from('planos').delete().eq('id', id);
+    if (error) {
+      setPlanos(planos.filter(p => p.id !== id));
+    } else {
+      carregarDados();
+    }
   }
 
   // Calendário
@@ -242,7 +322,7 @@ export default function Home() {
     );
   }
 
-  // Mapeamento idêntico de itens do menu lateral com ícones e setas
+  // Mapeamento correto dos itens do menu lateral com "Planos"
   const menuItens = [
     { nome: 'Painel', icone: '🏠', temSeta: false },
     { nome: 'Usuarios', icone: '👤', temSeta: false },
@@ -260,7 +340,7 @@ export default function Home() {
   return (
     <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: '#13151f', color: '#fff', fontFamily: 'sans-serif' }}>
       
-      {/* Sidebar Lateral com os nomes exatos da imagem */}
+      {/* Sidebar Lateral */}
       <aside style={{ width: '220px', backgroundColor: '#1a1d2b', borderRight: '1px solid #24283b', padding: '1.2rem 0.8rem', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
         <h2 style={{ color: '#fff', fontSize: '1.3rem', marginBottom: '1.2rem', paddingLeft: '0.8rem' }}>FitGestão</h2>
         
@@ -330,7 +410,102 @@ export default function Home() {
           </div>
         )}
 
-        {/* Frequência com Calendário */}
+        {/* Módulo de Planos */}
+        {abaAtiva === 'Planos' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            
+            {/* Form para Criar Novo Plano */}
+            <div style={{ backgroundColor: '#1e2230', padding: '1.5rem', borderRadius: '12px', border: '1px solid #2a2f42' }}>
+              <h3 style={{ margin: '0 0 1rem 0' }}>Cadastrar Novo Plano de Mensalidade</h3>
+              <form onSubmit={handleCadastrarPlano} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+                <input
+                  type="text"
+                  placeholder="Nome do Plano (ex: Plano Anual) *"
+                  value={nomePlanoForm}
+                  onChange={(e) => setNomePlanoForm(e.target.value)}
+                  required
+                  style={{ padding: '0.6rem', borderRadius: '6px', border: '1px solid #2a2f42', backgroundColor: '#13151f', color: '#fff' }}
+                />
+
+                <select
+                  value={duracaoMesesForm}
+                  onChange={(e) => setDuracaoMesesForm(Number(e.target.value))}
+                  style={{ padding: '0.6rem', borderRadius: '6px', border: '1px solid #2a2f42', backgroundColor: '#13151f', color: '#fff' }}
+                >
+                  <option value={1}>1 Mês (Mensal)</option>
+                  <option value={3}>3 Meses (Trimestral)</option>
+                  <option value={6}>6 Meses (Semestral)</option>
+                  <option value={12}>1 Ano (Anual)</option>
+                </select>
+
+                <input
+                  type="number"
+                  step="0.01"
+                  placeholder="Valor Total do Plano (R$) *"
+                  value={valorTotalForm}
+                  onChange={(e) => setValorTotalForm(e.target.value)}
+                  required
+                  style={{ padding: '0.6rem', borderRadius: '6px', border: '1px solid #2a2f42', backgroundColor: '#13151f', color: '#fff' }}
+                />
+
+                <input
+                  type="text"
+                  placeholder="Descrição ou Benefícios"
+                  value={descricaoPlanoForm}
+                  onChange={(e) => setDescricaoPlanoForm(e.target.value)}
+                  style={{ padding: '0.6rem', borderRadius: '6px', border: '1px solid #2a2f42', backgroundColor: '#13151f', color: '#fff' }}
+                />
+
+                <button
+                  type="submit"
+                  disabled={carregando}
+                  style={{ padding: '0.6rem 1.5rem', borderRadius: '6px', border: 'none', backgroundColor: '#635bfc', color: '#fff', fontWeight: 'bold', cursor: 'pointer', gridColumn: '1 / -1' }}
+                >
+                  {carregando ? 'A salvar...' : 'Criar Plano'}
+                </button>
+              </form>
+            </div>
+
+            {/* Listagem em Cards dos Planos */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.5rem' }}>
+              {planos.map((plano) => {
+                const equivalenteMensal = (plano.valor_total / plano.duracao_meses).toFixed(2);
+                return (
+                  <div key={plano.id} style={{ backgroundColor: '#1e2230', padding: '1.5rem', borderRadius: '12px', border: '1px solid #2a2f42', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '1rem' }}>
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <h4 style={{ margin: 0, fontSize: '1.1rem', color: '#fff' }}>{plano.nome}</h4>
+                        <span style={{ padding: '0.2rem 0.6rem', borderRadius: '4px', fontSize: '0.75rem', backgroundColor: '#635bfc', color: '#fff', fontWeight: 'bold' }}>
+                          {plano.duracao_meses === 1 ? '1 Mês' : plano.duracao_meses === 3 ? '3 Meses' : plano.duracao_meses === 6 ? '6 Meses' : '1 Ano'}
+                        </span>
+                      </div>
+                      <p style={{ color: '#8a8f9d', fontSize: '0.85rem', marginTop: '0.5rem' }}>{plano.descricao || 'Sem descrição.'}</p>
+                    </div>
+
+                    <div style={{ borderTop: '1px solid #2a2f42', paddingTop: '1rem' }}>
+                      <h2 style={{ margin: 0, fontSize: '1.6rem', color: '#22c55e' }}>
+                        R$ {plano.valor_total.toFixed(2)}
+                      </h2>
+                      <span style={{ fontSize: '0.8rem', color: '#8a8f9d' }}>
+                        Equivalente a R$ {equivalenteMensal} / mês
+                      </span>
+                    </div>
+
+                    <button
+                      onClick={() => handleEliminarPlano(plano.id)}
+                      style={{ padding: '0.4rem', backgroundColor: 'transparent', border: '1px solid #ef4444', borderRadius: '6px', color: '#ef4444', cursor: 'pointer', fontSize: '0.8rem' }}
+                    >
+                      Eliminar Plano
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+
+          </div>
+        )}
+
+        {/* Frequência */}
         {abaAtiva === 'Frequência' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
             <div style={{ backgroundColor: '#1e2230', padding: '1.5rem', borderRadius: '12px', border: '1px solid #2a2f42', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
@@ -488,7 +663,7 @@ export default function Home() {
         )}
 
         {/* Mensagem Padrão para Outras Abas */}
-        {abaAtiva !== 'Painel' && abaAtiva !== 'Frequência' && abaAtiva !== 'Usuarios' && (
+        {abaAtiva !== 'Painel' && abaAtiva !== 'Planos' && abaAtiva !== 'Frequência' && abaAtiva !== 'Usuarios' && (
           <div style={{ backgroundColor: '#1e2230', padding: '3rem', borderRadius: '12px', border: '1px solid #2a2f42', textAlign: 'center' }}>
             <h2>Módulo de {abaAtiva}</h2>
             <p style={{ color: '#8a8f9d', marginTop: '0.5rem' }}>Esta secção está pronta para ser conectada às tabelas de {abaAtiva.toLowerCase()} do Supabase.</p>
