@@ -8,6 +8,7 @@ interface Aluno {
   id?: number;
   nome: string;
   telefone?: string;
+  status?: string;
   user_id?: string;
 }
 
@@ -16,6 +17,7 @@ export default function Home() {
   const [alunos, setAlunos] = useState<Aluno[]>([]);
   const [nome, setNome] = useState('');
   const [telefone, setTelefone] = useState('');
+  const [status, setStatus] = useState('Ativo');
   const [carregando, setCarregando] = useState(false);
 
   // 1. Gerenciar sessão do utilizador logado
@@ -38,7 +40,7 @@ export default function Home() {
     const { data, error } = await supabase
       .from('alunos')
       .select('*')
-      .eq('user_id', session.user.id) // <-- Filtra por user_id
+      .or(`user_id.eq.${session.user.id},academia_id.eq.${session.user.id}`)
       .order('id', { ascending: false });
 
     if (!error) {
@@ -57,7 +59,7 @@ export default function Home() {
     }
   }, [session]);
 
-  // 3. Cadastrar Aluno Vinculado ao user_id da sessão
+  // 3. Cadastrar Aluno Vinculado ao Utilizador Logado
   async function handleCadastrarAluno(e: React.FormEvent) {
     e.preventDefault();
 
@@ -79,7 +81,9 @@ export default function Home() {
         {
           nome,
           telefone,
-          user_id: session.user.id // <-- Salva associado à academia
+          status,
+          user_id: session.user.id,
+          academia_id: session.user.id
         }
       ]);
 
@@ -87,55 +91,126 @@ export default function Home() {
 
     if (error) {
       console.error('Erro ao salvar aluno:', error.message);
-      alert('Erro ao cadastrar aluno: ' + error.message);
+      alert('Erro ao cadastrar: ' + error.message);
     } else {
       setNome('');
       setTelefone('');
+      setStatus('Ativo');
+      carregarAlunos();
+    }
+  }
+
+  // 4. Eliminar Aluno
+  async function handleEliminarAluno(id?: number) {
+    if (!id) return;
+    if (!confirm('Tem certeza que deseja eliminar este aluno?')) return;
+
+    const { error } = await supabase
+      .from('alunos')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      alert('Erro ao eliminar aluno: ' + error.message);
+    } else {
       carregarAlunos();
     }
   }
 
   return (
-    <main style={{ padding: '2rem', fontFamily: 'sans-serif' }}>
-      <h1>FitGestão</h1>
+    <main style={{ padding: '2rem', fontFamily: 'sans-serif', maxWidth: '900px', margin: '0 auto' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+        <div>
+          <h1>FitGestão</h1>
+          {session && (
+            <p style={{ fontSize: '0.9rem', color: '#666' }}>
+              Sessão iniciada como: <strong>{session.user.email}</strong>
+            </p>
+          )}
+        </div>
+        {session && (
+          <button 
+            onClick={() => supabase.auth.signOut()}
+            style={{ padding: '0.5rem 1rem', cursor: 'pointer' }}
+          >
+            Sair
+          </button>
+        )}
+      </div>
 
       {!session ? (
-        <p>Por favor, faça login para acessar os seus alunos.</p>
+        <p>Por favor, faça login para aceder aos seus alunos.</p>
       ) : (
         <div>
-          <h2>Cadastrar Novo Aluno</h2>
-          <form onSubmit={handleCadastrarAluno} style={{ marginBottom: '2rem', display: 'flex', gap: '1rem' }}>
-            <input
-              type="text"
-              placeholder="Nome do aluno"
-              value={nome}
-              onChange={(e) => setNome(e.target.value)}
-              style={{ padding: '0.5rem' }}
-            />
-            <input
-              type="text"
-              placeholder="Telefone"
-              value={telefone}
-              onChange={(e) => setTelefone(e.target.value)}
-              style={{ padding: '0.5rem' }}
-            />
-            <button type="submit" disabled={carregando} style={{ padding: '0.5rem 1rem' }}>
-              {carregando ? 'A guardar...' : 'Cadastrar'}
-            </button>
-          </form>
+          <section style={{ border: '1px solid #ccc', borderRadius: '8px', padding: '1.5rem', marginBottom: '2rem' }}>
+            <h2>Cadastrar Aluno na Minha Academia</h2>
+            <form onSubmit={handleCadastrarAluno} style={{ display: 'flex', gap: '1rem', marginTop: '1rem', flexWrap: 'wrap' }}>
+              <input
+                type="text"
+                placeholder="Nome do aluno"
+                value={nome}
+                onChange={(e) => setNome(e.target.value)}
+                style={{ padding: '0.5rem', flex: '1', minWidth: '200px' }}
+              />
+              <input
+                type="text"
+                placeholder="Telefone"
+                value={telefone}
+                onChange={(e) => setTelefone(e.target.value)}
+                style={{ padding: '0.5rem', flex: '1', minWidth: '150px' }}
+              />
+              <select 
+                value={status} 
+                onChange={(e) => setStatus(e.target.value)}
+                style={{ padding: '0.5rem' }}
+              >
+                <option value="Ativo">Ativo</option>
+                <option value="Inativo">Inativo</option>
+              </select>
+              <button type="submit" disabled={carregando} style={{ padding: '0.5rem 1.5rem', cursor: 'pointer' }}>
+                {carregando ? 'A guardar...' : 'Cadastrar'}
+              </button>
+            </form>
+          </section>
 
-          <h2>Meus Alunos</h2>
-          {alunos.length === 0 ? (
-            <p>Nenhum aluno cadastrado ainda.</p>
-          ) : (
-            <ul>
-              {alunos.map((aluno) => (
-                <li key={aluno.id} style={{ marginBottom: '0.5rem' }}>
-                  <strong>{aluno.nome}</strong> {aluno.telefone ? `- ${aluno.telefone}` : ''}
-                </li>
-              ))}
-            </ul>
-          )}
+          <section style={{ border: '1px solid #ccc', borderRadius: '8px', padding: '1.5rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h2>Alunos Registados</h2>
+              <span>Total: {alunos.length}</span>
+            </div>
+
+            {alunos.length === 0 ? (
+              <p style={{ marginTop: '1rem' }}>Nenhum aluno cadastrado ainda.</p>
+            ) : (
+              <table style={{ width: '100%', marginTop: '1rem', borderCollapse: 'collapse', textAlign: 'left' }}>
+                <thead>
+                  <tr style={{ borderBottom: '2px solid #ddd' }}>
+                    <th style={{ padding: '0.5rem' }}>NOME</th>
+                    <th style={{ padding: '0.5rem' }}>TELEFONE</th>
+                    <th style={{ padding: '0.5rem' }}>STATUS</th>
+                    <th style={{ padding: '0.5rem' }}>AÇÕES</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {alunos.map((aluno) => (
+                    <tr key={aluno.id} style={{ borderBottom: '1px solid #eee' }}>
+                      <td style={{ padding: '0.5rem' }}>{aluno.nome}</td>
+                      <td style={{ padding: '0.5rem' }}>{aluno.telefone || '-'}</td>
+                      <td style={{ padding: '0.5rem' }}>{aluno.status || 'Ativo'}</td>
+                      <td style={{ padding: '0.5rem' }}>
+                        <button 
+                          onClick={() => handleEliminarAluno(aluno.id)}
+                          style={{ padding: '0.2rem 0.5rem', color: 'red', cursor: 'pointer' }}
+                        >
+                          Eliminar
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </section>
         </div>
       )}
     </main>
