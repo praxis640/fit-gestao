@@ -21,14 +21,14 @@ interface Aluno {
 interface Frequencia {
   id?: number;
   aluno_id: string | number;
-  data: string; // YYYY-MM-DD
+  data: string;
   user_id?: string;
 }
 
 interface Plano {
   id?: string | number;
   nome: string;
-  duracao_meses: number; // 1, 3, 6 ou 12
+  duracao_meses: number;
   valor_total: number;
   descricao?: string;
   user_id?: string;
@@ -43,11 +43,9 @@ export default function Home() {
   const [abaAtiva, setAbaAtiva] = useState<string>('Painel');
   const [busca, setBusca] = useState<string>('');
 
-  // Estados de Frequência
   const [alunoSelecionadoId, setAlunoSelecionadoId] = useState<string | number | null>(null);
   const [mesAtual, setMesAtual] = useState<Date>(new Date());
 
-  // Form Aluno
   const [nome, setNome] = useState('');
   const [telefone, setTelefone] = useState('');
   const [planoNome, setPlanoNome] = useState('Mensal');
@@ -56,13 +54,11 @@ export default function Home() {
   const [statusPagamento, setStatusPagamento] = useState<'Em Dia' | 'Pendente' | 'Atrasado'>('Em Dia');
   const [graduacao, setGraduacao] = useState('Iniciante');
 
-  // Form Plano
   const [nomePlanoForm, setNomePlanoForm] = useState('');
   const [duracaoMesesForm, setDuracaoMesesForm] = useState<number>(1);
   const [valorTotalForm, setValorTotalForm] = useState('120.00');
   const [descricaoPlanoForm, setDescricaoPlanoForm] = useState('');
 
-  // Auth
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [modoAuth, setModoAuth] = useState<'login' | 'signup'>('login');
@@ -77,7 +73,6 @@ export default function Home() {
   async function carregarDados() {
     if (!session?.user?.id) return;
 
-    // Alunos
     const { data: dataAlunos } = await supabase
       .from('alunos')
       .select('*')
@@ -91,7 +86,6 @@ export default function Home() {
       }
     }
 
-    // Frequencias
     const { data: dataFreq } = await supabase
       .from('frequencias')
       .select('*')
@@ -99,16 +93,14 @@ export default function Home() {
 
     if (dataFreq) setFrequencias(dataFreq);
 
-    // Planos
     const { data: dataPlanos } = await supabase
       .from('planos')
       .select('*')
       .eq('user_id', session.user.id);
 
-    if (dataPlanos) {
+    if (dataPlanos && dataPlanos.length > 0) {
       setPlanos(dataPlanos);
     } else {
-      // Planos padrão de exemplo caso a tabela esteja vazia
       setPlanos([
         { id: '1', nome: 'Plano Mensal', duracao_meses: 1, valor_total: 120.00, descricao: 'Acesso total de 1 mês' },
         { id: '2', nome: 'Plano Trimestral', duracao_meses: 3, valor_total: 330.00, descricao: 'Desconto equivalente a R$ 110/mês' },
@@ -127,7 +119,6 @@ export default function Home() {
     }
   }, [session]);
 
-  // Presença Hoje
   async function handleMarcarPresenca(alunoId: string | number) {
     if (!session?.user?.id) return;
 
@@ -151,7 +142,6 @@ export default function Home() {
     else carregarDados();
   }
 
-  // Cadastrar Plano
   async function handleCadastrarPlano(e: React.FormEvent) {
     e.preventDefault();
     if (!session?.user?.id || !nomePlanoForm.trim()) return;
@@ -169,7 +159,6 @@ export default function Home() {
     setCarregando(false);
 
     if (error) {
-      // Fallback local se a tabela planos ainda não existir no Supabase
       const novoPlano: Plano = {
         id: Date.now().toString(),
         nome: nomePlanoForm,
@@ -177,7 +166,7 @@ export default function Home() {
         valor_total: parseFloat(valorTotalForm) || 0,
         descricao: descricaoPlanoForm
       };
-      setPlanos([...planos, novoPlano]);
+      setPlanos(prev => [...prev, novoPlano]);
     } else {
       carregarDados();
     }
@@ -190,13 +179,12 @@ export default function Home() {
     if (!id || !confirm('Deseja eliminar este plano?')) return;
     const { error } = await supabase.from('planos').delete().eq('id', id);
     if (error) {
-      setPlanos(planos.filter(p => p.id !== id));
+      setPlanos(prev => prev.filter(p => p.id !== id));
     } else {
       carregarDados();
     }
   }
 
-  // Calendário
   const diasDoMes = useMemo(() => {
     const ano = mesAtual.getFullYear();
     const mes = mesAtual.getMonth();
@@ -231,7 +219,6 @@ export default function Home() {
     );
   }, [frequencias, alunoSelecionadoId]);
 
-  // KPIs
   const metricas = useMemo(() => {
     const totalUsuarios = alunos.length;
     const usuariosAtraso = alunos.filter((a) => a.status_pagamento !== 'Em Dia').length;
@@ -322,7 +309,6 @@ export default function Home() {
     );
   }
 
-  // Mapeamento correto dos itens do menu lateral com "Planos"
   const menuItens = [
     { nome: 'Painel', icone: '🏠', temSeta: false },
     { nome: 'Usuarios', icone: '👤', temSeta: false },
@@ -340,7 +326,6 @@ export default function Home() {
   return (
     <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: '#13151f', color: '#fff', fontFamily: 'sans-serif' }}>
       
-      {/* Sidebar Lateral */}
       <aside style={{ width: '220px', backgroundColor: '#1a1d2b', borderRight: '1px solid #24283b', padding: '1.2rem 0.8rem', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
         <h2 style={{ color: '#fff', fontSize: '1.3rem', marginBottom: '1.2rem', paddingLeft: '0.8rem' }}>FitGestão</h2>
         
@@ -381,10 +366,8 @@ export default function Home() {
         </div>
       </aside>
 
-      {/* Conteúdo Principal */}
       <main style={{ flex: 1, padding: '2rem', overflowY: 'auto' }}>
         
-        {/* Painel */}
         {abaAtiva === 'Painel' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
             <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '1.5rem' }}>
@@ -410,11 +393,8 @@ export default function Home() {
           </div>
         )}
 
-        {/* Módulo de Planos */}
         {abaAtiva === 'Planos' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-            
-            {/* Form para Criar Novo Plano */}
             <div style={{ backgroundColor: '#1e2230', padding: '1.5rem', borderRadius: '12px', border: '1px solid #2a2f42' }}>
               <h3 style={{ margin: '0 0 1rem 0' }}>Cadastrar Novo Plano de Mensalidade</h3>
               <form onSubmit={handleCadastrarPlano} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
@@ -461,12 +441,11 @@ export default function Home() {
                   disabled={carregando}
                   style={{ padding: '0.6rem 1.5rem', borderRadius: '6px', border: 'none', backgroundColor: '#635bfc', color: '#fff', fontWeight: 'bold', cursor: 'pointer', gridColumn: '1 / -1' }}
                 >
-                  {carregando ? 'A salvar...' : 'Criar Plano'}
+                  {carregando ? 'Salvando...' : 'Criar Plano'}
                 </button>
               </form>
             </div>
 
-            {/* Listagem em Cards dos Planos */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.5rem' }}>
               {planos.map((plano) => {
                 const equivalenteMensal = (plano.valor_total / plano.duracao_meses).toFixed(2);
@@ -501,11 +480,9 @@ export default function Home() {
                 );
               })}
             </div>
-
           </div>
         )}
 
-        {/* Frequência */}
         {abaAtiva === 'Frequência' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
             <div style={{ backgroundColor: '#1e2230', padding: '1.5rem', borderRadius: '12px', border: '1px solid #2a2f42', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
@@ -536,7 +513,6 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Calendário */}
             <div style={{ backgroundColor: '#1e2230', padding: '1.5rem', borderRadius: '12px', border: '1px solid #2a2f42' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
                 <button
@@ -596,7 +572,6 @@ export default function Home() {
           </div>
         )}
 
-        {/* Usuarios */}
         {abaAtiva === 'Usuarios' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
             <div style={{ backgroundColor: '#1e2230', padding: '1.5rem', borderRadius: '12px', border: '1px solid #2a2f42' }}>
@@ -608,7 +583,11 @@ export default function Home() {
                 <input type="number" placeholder="Valor (R$)" value={valorMensalidade} onChange={(e) => setValorMensalidade(e.target.value)} style={{ padding: '0.6rem', borderRadius: '6px', border: '1px solid #2a2f42', backgroundColor: '#13151f', color: '#fff' }} />
                 <input type="number" placeholder="Dia Vencimento" value={diaVencimento} onChange={(e) => setDiaVencimento(e.target.value)} style={{ padding: '0.6rem', borderRadius: '6px', border: '1px solid #2a2f42', backgroundColor: '#13151f', color: '#fff' }} />
                 <input type="text" placeholder="Nível / Faixa" value={graduacao} onChange={(e) => setGraduacao(e.target.value)} style={{ padding: '0.6rem', borderRadius: '6px', border: '1px solid #2a2f42', backgroundColor: '#13151f', color: '#fff' }} />
-                <select value={statusPagamento} onChange={(e) => setStatusPagamento(e.target.value as any)} style={{ padding: '0.6rem', borderRadius: '6px', border: '1px solid #2a2f42', backgroundColor: '#13151f', color: '#fff' }}>
+                <select 
+                  value={statusPagamento} 
+                  onChange={(e) => setStatusPagamento(e.target.value as 'Em Dia' | 'Pendente' | 'Atrasado')} 
+                  style={{ padding: '0.6rem', borderRadius: '6px', border: '1px solid #2a2f42', backgroundColor: '#13151f', color: '#fff' }}
+                >
                   <option value="Em Dia">Em Dia</option>
                   <option value="Pendente">Pendente</option>
                   <option value="Atrasado">Atrasado</option>
@@ -662,7 +641,6 @@ export default function Home() {
           </div>
         )}
 
-        {/* Mensagem Padrão para Outras Abas */}
         {abaAtiva !== 'Painel' && abaAtiva !== 'Planos' && abaAtiva !== 'Frequência' && abaAtiva !== 'Usuarios' && (
           <div style={{ backgroundColor: '#1e2230', padding: '3rem', borderRadius: '12px', border: '1px solid #2a2f42', textAlign: 'center' }}>
             <h2>Módulo de {abaAtiva}</h2>
