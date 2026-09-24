@@ -338,7 +338,7 @@ export default function Home() {
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                justify: 'space-between',
+                justifyContent: 'space-between',
                 padding: '0.65rem 0.9rem',
                 borderRadius: '8px',
                 border: 'none',
