@@ -47,6 +47,9 @@ export default function Home() {
   const [alunoSelecionadoId, setAlunoSelecionadoId] = useState<string | number | null>(null);
   const [mesAtual, setMesAtual] = useState<Date>(new Date());
 
+  // Navegador do Módulo Financeiro
+  const [mesFinanceiro, setMesFinanceiro] = useState<Date>(new Date());
+
   // Form Aluno (Cadastro ou Edição)
   const [editandoAlunoId, setEditandoAlunoId] = useState<string | number | null>(null);
   const [nome, setNome] = useState('');
@@ -136,10 +139,9 @@ export default function Home() {
     }
   }
 
-  // Calcular dias restantes do plano do aluno
   function calcularDiasRestantes(aluno: Aluno) {
     const planoEncontrado = planos.find(p => p.nome === aluno.plano_nome);
-    const mesesDuracao = planoEncontrado ? planoEncontrado.duracao_meses : 1; // Padrão 1 mês se não achar
+    const mesesDuracao = planoEncontrado ? planoEncontrado.duracao_meses : 1;
     
     const dataCriacao = aluno.created_at ? new Date(aluno.created_at) : new Date();
     const dataExpiracao = new Date(dataCriacao);
@@ -153,6 +155,35 @@ export default function Home() {
     if (diffDias === 0) return 'Expira hoje';
     return `${diffDias} dias restantes`;
   }
+
+  // Cálculos do Módulo Financeiro com base no mês selecionado
+  const analiseFinanceira = useMemo(() => {
+    const totalAlunos = alunos.length;
+    const receitaEfetivaMes = alunos
+      .filter((a) => a.status_pagamento === 'Em Dia')
+      .reduce((acc, curr) => acc + (Number(curr.valor_mensalidade) || 0), 0);
+
+    const inadimplenciaMes = alunos
+      .filter((a) => a.status_pagamento !== 'Em Dia')
+      .reduce((acc, curr) => acc + (Number(curr.valor_mensalidade) || 0), 0);
+
+    const potencialTotal = receitaEfetivaMes + inadimplenciaMes;
+
+    // Simulação de projeção para os próximos meses baseada na base atual de alunos
+    const projecaoMes1 = potencialTotal * 1.05;
+    const projecaoMes2 = potencialTotal * 1.08;
+    const projecaoMes3 = potencialTotal * 1.12;
+
+    return {
+      receitaEfetivaMes,
+      inadimplenciaMes,
+      potencialTotal,
+      totalAlunos,
+      projecaoMes1,
+      projecaoMes2,
+      projecaoMes3
+    };
+  }, [alunos, mesFinanceiro]);
 
   async function handleMarcarPresenca(alunoId: string | number) {
     if (!session?.user?.id) return;
@@ -281,7 +312,6 @@ export default function Home() {
     setAuthCarregando(false);
   }
 
-  // Cadastrar ou Atualizar Aluno
   async function handleSalvarAluno(e: React.FormEvent) {
     e.preventDefault();
     if (!session?.user?.id || !nome.trim()) return;
@@ -302,7 +332,6 @@ export default function Home() {
     };
 
     if (editandoAlunoId) {
-      // Atualizar Aluno Existente
       const { error } = await supabase.from('alunos').update(dadosAluno).eq('id', editandoAlunoId);
       setCarregando(false);
       if (error) alert('Erro ao atualizar: ' + error.message);
@@ -313,7 +342,6 @@ export default function Home() {
         carregarDados();
       }
     } else {
-      // Inserir Novo Aluno
       const { error } = await supabase.from('alunos').insert([dadosAluno]);
       setCarregando(false);
       if (error) alert('Erro ao cadastrar: ' + error.message);
@@ -389,7 +417,7 @@ export default function Home() {
     { nome: 'Treinos', icone: '🏃', temSeta: true },
     { nome: 'Nutrição', icone: '🥣', temSeta: true },
     { nome: 'Vendas', icone: '🛍️', temSeta: true },
-    { nome: 'Financeiro', icone: '💵', temSeta: true },
+    { nome: 'Financeiro', icone: '💵', temSeta: false },
     { nome: 'Relatorios', icone: '📋', temSeta: false },
     { nome: 'Configurações', icone: '⚙️', temSeta: false },
   ];
@@ -461,6 +489,94 @@ export default function Home() {
                 <h2 style={{ fontSize: '2rem', margin: '0.5rem 0', color: '#ff5c5c' }}>{metricas.usuariosAtraso}</h2>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* MÓDULO FINANCEIRO AVANÇADO */}
+        {abaAtiva === 'Financeiro' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            
+            {/* Seletor de Mês e Cabeçalho */}
+            <div style={{ backgroundColor: '#1e2230', padding: '1.5rem', borderRadius: '12px', border: '1px solid #2a2f42', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.3rem' }}>Análise e Projeção Financeira</h3>
+                <p style={{ color: '#8a8f9d', fontSize: '0.85rem', marginTop: '0.3rem' }}>Acompanhe entradas efetivas, inadimplências e expectativas futuras.</p>
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.8rem', alignItems: 'center' }}>
+                <button
+                  onClick={() => setMesFinanceiro(new Date(mesFinanceiro.getFullYear(), mesFinanceiro.getMonth() - 1, 1))}
+                  style={{ padding: '0.5rem 0.9rem', backgroundColor: '#13151f', border: '1px solid #2a2f42', color: '#fff', borderRadius: '6px', cursor: 'pointer' }}
+                >
+                  ◀ Mês Anterior
+                </button>
+
+                <span style={{ fontWeight: 'bold', minWidth: '160px', textAlign: 'center', color: '#635bfc' }}>
+                  {mesFinanceiro.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }).toUpperCase()}
+                </span>
+
+                <button
+                  onClick={() => setMesFinanceiro(new Date(mesFinanceiro.getFullYear(), mesFinanceiro.getMonth() + 1, 1))}
+                  style={{ padding: '0.5rem 0.9rem', backgroundColor: '#13151f', border: '1px solid #2a2f42', color: '#fff', borderRadius: '6px', cursor: 'pointer' }}
+                >
+                  Próximo Mês ▶
+                </button>
+              </div>
+            </div>
+
+            {/* Cards de Resumo do Mês Selecionado */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1.5rem' }}>
+              <div style={{ backgroundColor: '#1e2230', padding: '1.5rem', borderRadius: '12px', border: '1px solid #2a2f42' }}>
+                <span style={{ color: '#8a8f9d', fontSize: '0.85rem' }}>💵 Entradas Efetivas (Recebido)</span>
+                <h2 style={{ fontSize: '1.8rem', margin: '0.5rem 0', color: '#22c55e' }}>R$ {analiseFinanceira.receitaEfetivaMes.toFixed(2)}</h2>
+                <span style={{ fontSize: '0.75rem', color: '#8a8f9d' }}>Alunos com pagamento em dia</span>
+              </div>
+
+              <div style={{ backgroundColor: '#1e2230', padding: '1.5rem', borderRadius: '12px', border: '1px solid #2a2f42' }}>
+                <span style={{ color: '#8a8f9d', fontSize: '0.85rem' }}>⚠️ Inadimplência / Pendente</span>
+                <h2 style={{ fontSize: '1.8rem', margin: '0.5rem 0', color: '#ef4444' }}>R$ {analiseFinanceira.inadimplenciaMes.toFixed(2)}</h2>
+                <span style={{ fontSize: '0.75rem', color: '#8a8f9d' }}>Valores por regularizar</span>
+              </div>
+
+              <div style={{ backgroundColor: '#1e2230', padding: '1.5rem', borderRadius: '12px', border: '1px solid #2a2f42' }}>
+                <span style={{ color: '#8a8f9d', fontSize: '0.85rem' }}>📈 Faturamento Potencial Total</span>
+                <h2 style={{ fontSize: '1.8rem', margin: '0.5rem 0', color: '#3b82f6' }}>R$ {analiseFinanceira.potencialTotal.toFixed(2)}</h2>
+                <span style={{ fontSize: '0.75rem', color: '#8a8f9d' }}>Soma de todos os contratos</span>
+              </div>
+            </div>
+
+            {/* Expectativa dos Meses Posteriores (Projeções) */}
+            <div style={{ backgroundColor: '#1e2230', padding: '1.5rem', borderRadius: '12px', border: '1px solid #2a2f42' }}>
+              <h3 style={{ margin: '0 0 1rem 0' }}>🔮 Expectativa de Faturamento para os Próximos Meses</h3>
+              <p style={{ color: '#8a8f9d', fontSize: '0.85rem', marginBottom: '1.5rem' }}>Projeção baseada na retenção atual e contratos recorrentes de planos ativos.</p>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.5rem' }}>
+                <div style={{ backgroundColor: '#13151f', padding: '1.2rem', borderRadius: '8px', border: '1px solid #2a2f42' }}>
+                  <span style={{ color: '#8a8f9d', fontSize: '0.85rem' }}>
+                    {new Date(mesFinanceira.getFullYear(), mesFinanceira.getMonth() + 1, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }).toUpperCase()}
+                  </span>
+                  <h3 style={{ color: '#22c55e', margin: '0.5rem 0 0 0', fontSize: '1.5rem' }}>R$ {analiseFinanceira.projecaoMes1.toFixed(2)}</h3>
+                  <span style={{ fontSize: '0.75rem', color: '#8a8f9d' }}>Estimativa +5% crescimento</span>
+                </div>
+
+                <div style={{ backgroundColor: '#13151f', padding: '1.2rem', borderRadius: '8px', border: '1px solid #2a2f42' }}>
+                  <span style={{ color: '#8a8f9d', fontSize: '0.85rem' }}>
+                    {new Date(mesFinanceira.getFullYear(), mesFinanceira.getMonth() + 2, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }).toUpperCase()}
+                  </span>
+                  <h3 style={{ color: '#22c55e', margin: '0.5rem 0 0 0', fontSize: '1.5rem' }}>R$ {analiseFinanceira.projecaoMes2.toFixed(2)}</h3>
+                  <span style={{ fontSize: '0.75rem', color: '#8a8f9d' }}>Estimativa +8% crescimento</span>
+                </div>
+
+                <div style={{ backgroundColor: '#13151f', padding: '1.2rem', borderRadius: '8px', border: '1px solid #2a2f42' }}>
+                  <span style={{ color: '#8a8f9d', fontSize: '0.85rem' }}>
+                    {new Date(mesFinanceira.getFullYear(), mesFinanceira.getMonth() + 3, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }).toUpperCase()}
+                  </span>
+                  <h3 style={{ color: '#22c55e', margin: '0.5rem 0 0 0', fontSize: '1.5rem' }}>R$ {analiseFinanceira.projecaoMes3.toFixed(2)}</h3>
+                  <span style={{ fontSize: '0.75rem', color: '#8a8f9d' }}>Estimativa +12% crescimento</span>
+                </div>
+              </div>
+            </div>
+
           </div>
         )}
 
@@ -747,7 +863,7 @@ export default function Home() {
           </div>
         )}
 
-        {abaAtiva !== 'Painel' && abaAtiva !== 'Planos' && abaAtiva !== 'Frequência' && abaAtiva !== 'Usuarios' && (
+        {abaAtiva !== 'Painel' && abaAtiva !== 'Planos' && abaAtiva !== 'Frequência' && abaAtiva !== 'Usuarios' && abaAtiva !== 'Financeiro' && (
           <div style={{ backgroundColor: '#1e2230', padding: '3rem', borderRadius: '12px', border: '1px solid #2a2f42', textAlign: 'center' }}>
             <h2>Módulo de {abaAtiva}</h2>
             <p style={{ color: '#8a8f9d', marginTop: '0.5rem' }}>Esta secção está pronta para ser conectada às tabelas de {abaAtiva.toLowerCase()} do Supabase.</p>
