@@ -49,7 +49,7 @@ export default function Home() {
   // Form Aluno
   const [nome, setNome] = useState('');
   const [telefone, setTelefone] = useState('');
-  const [planoSelecionadoId, setPlanoSelecionadoId] = useState<string>('');
+  const [planoSelecionadoNome, setPlanoSelecionadoNome] = useState<string>('Plano Mensal');
   const [valorMensalidade, setValorMensalidade] = useState('120.00');
   const [diaVencimento, setDiaVencimento] = useState('10');
   const [statusPagamento, setStatusPagamento] = useState<'Em Dia' | 'Pendente' | 'Atrasado'>('Em Dia');
@@ -106,7 +106,7 @@ export default function Home() {
 
     if (dataPlanos && dataPlanos.length > 0) {
       setPlanos(dataPlanos);
-      if (!planoSelecionadoId) setPlanoSelecionadoId(String(dataPlanos[0].nome));
+      setPlanoSelecionadoNome(dataPlanos[0].nome);
     } else {
       const planosPadrao: Plano[] = [
         { id: '1', nome: 'Plano Mensal', duracao_meses: 1, valor_total: 120.00, descricao: 'Acesso total de 1 mês' },
@@ -115,7 +115,7 @@ export default function Home() {
         { id: '4', nome: 'Plano Anual VIP', duracao_meses: 12, valor_total: 1080.00, descricao: 'Melhor valor: R$ 90/mês' },
       ];
       setPlanos(planosPadrao);
-      if (!planoSelecionadoId) setPlanoSelecionadoId(planosPadrao[0].nome);
+      setPlanoSelecionadoNome(planosPadrao[0].nome);
     }
   }
 
@@ -128,9 +128,8 @@ export default function Home() {
     }
   }, [session]);
 
-  // Atualizar valor da mensalidade ao escolher um plano no formulário de alunos
   function handleSelecionarPlanoAluno(nomePlano: string) {
-    setPlanoSelecionadoId(nomePlano);
+    setPlanoSelecionadoNome(nomePlano);
     const planoEncontrado = planos.find(p => p.nome === nomePlano);
     if (planoEncontrado) {
       const valorMensalEquivalente = (planoEncontrado.valor_total / planoEncontrado.duracao_meses).toFixed(2);
@@ -275,7 +274,7 @@ export default function Home() {
         nome,
         telefone,
         status: 'Ativo',
-        plano_nome: planoSelecionadoId || 'Mensal',
+        plano_nome: planoSelecionadoNome || 'Plano Mensal',
         valor_mensalidade: parseFloat(valorMensalidade) || 0,
         dia_vencimento: parseInt(diaVencimento) || 10,
         status_pagamento: statusPagamento,
@@ -357,7 +356,7 @@ export default function Home() {
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                justify: 'space-between',
+                justifyContent: 'space-between',
                 padding: '0.65rem 0.9rem',
                 borderRadius: '8px',
                 border: 'none',
@@ -387,7 +386,6 @@ export default function Home() {
 
       <main style={{ flex: 1, padding: '2rem', overflowY: 'auto' }}>
         
-        {/* Painel */}
         {abaAtiva === 'Painel' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
             <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '1.5rem' }}>
@@ -413,7 +411,6 @@ export default function Home() {
           </div>
         )}
 
-        {/* Planos */}
         {abaAtiva === 'Planos' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
             <div style={{ backgroundColor: '#1e2230', padding: '1.5rem', borderRadius: '12px', border: '1px solid #2a2f42' }}>
@@ -504,7 +501,6 @@ export default function Home() {
           </div>
         )}
 
-        {/* Frequência */}
         {abaAtiva === 'Frequência' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
             <div style={{ backgroundColor: '#1e2230', padding: '1.5rem', borderRadius: '12px', border: '1px solid #2a2f42', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
@@ -594,7 +590,6 @@ export default function Home() {
           </div>
         )}
 
-        {/* Usuarios com Seleção de Plano */}
         {abaAtiva === 'Usuarios' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
             <div style={{ backgroundColor: '#1e2230', padding: '1.5rem', borderRadius: '12px', border: '1px solid #2a2f42' }}>
@@ -603,9 +598,8 @@ export default function Home() {
                 <input type="text" placeholder="Nome Completo *" value={nome} onChange={(e) => setNome(e.target.value)} required style={{ padding: '0.6rem', borderRadius: '6px', border: '1px solid #2a2f42', backgroundColor: '#13151f', color: '#fff' }} />
                 <input type="text" placeholder="Telefone" value={telefone} onChange={(e) => setTelefone(e.target.value)} style={{ padding: '0.6rem', borderRadius: '6px', border: '1px solid #2a2f42', backgroundColor: '#13151f', color: '#fff' }} />
                 
-                {/* Seleção do Plano Cadastrado */}
                 <select
-                  value={planoSelecionadoId}
+                  value={planoSelecionadoNome}
                   onChange={(e) => handleSelecionarPlanoAluno(e.target.value)}
                   style={{ padding: '0.6rem', borderRadius: '6px', border: '1px solid #2a2f42', backgroundColor: '#13151f', color: '#fff' }}
                 >
@@ -655,7 +649,7 @@ export default function Home() {
                       <td style={{ padding: '0.8rem' }}>{aluno.nome}</td>
                       <td style={{ padding: '0.8rem' }}>
                         <span style={{ padding: '0.2rem 0.5rem', borderRadius: '4px', backgroundColor: '#2a2f42', fontSize: '0.8rem', color: '#635bfc', fontWeight: 'bold' }}>
-                          {aluno.plano_nome || 'Mensal'}
+                          {aluno.plano_nome || 'Plano Mensal'}
                         </span>
                       </td>
                       <td style={{ padding: '0.8rem' }}>R$ {Number(aluno.valor_mensalidade || 0).toFixed(2)}</td>
