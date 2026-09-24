@@ -10,6 +10,7 @@ interface Aluno {
   telefone?: string;
   status?: string;
   user_id?: string;
+  academia_id?: string;
 }
 
 export default function Home() {
@@ -20,7 +21,12 @@ export default function Home() {
   const [status, setStatus] = useState('Ativo');
   const [carregando, setCarregando] = useState(false);
 
-  // 1. Gerenciar sessão do utilizador logado
+  // Autenticação
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [modoAuth, setModoAuth] = useState<'login' | 'signup'>('login');
+  const [authCarregando, setAuthCarregando] = useState(false);
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
@@ -33,7 +39,6 @@ export default function Home() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // 2. Buscar Alunos APENAS da Academia Logada
   async function carregarAlunos() {
     if (!session?.user?.id) return;
 
@@ -50,7 +55,6 @@ export default function Home() {
     }
   }
 
-  // Recarregar lista sempre que a sessão mudar
   useEffect(() => {
     if (session) {
       carregarAlunos();
@@ -59,7 +63,22 @@ export default function Home() {
     }
   }, [session]);
 
-  // 3. Cadastrar Aluno Vinculado ao Utilizador Logado
+  async function handleAuth(e: React.FormEvent) {
+    e.preventDefault();
+    setAuthCarregando(true);
+
+    if (modoAuth === 'login') {
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) alert('Erro ao entrar: ' + error.message);
+    } else {
+      const { error } = await supabase.auth.signUp({ email, password });
+      if (error) alert('Erro ao criar conta: ' + error.message);
+      else alert('Conta criada com sucesso! Faça login.');
+    }
+
+    setAuthCarregando(false);
+  }
+
   async function handleCadastrarAluno(e: React.FormEvent) {
     e.preventDefault();
 
@@ -100,7 +119,6 @@ export default function Home() {
     }
   }
 
-  // 4. Eliminar Aluno
   async function handleEliminarAluno(id?: number) {
     if (!id) return;
     if (!confirm('Tem certeza que deseja eliminar este aluno?')) return;
@@ -118,16 +136,9 @@ export default function Home() {
   }
 
   return (
-    <main style={{ padding: '2rem', fontFamily: 'sans-serif', maxWidth: '900px', margin: '0 auto' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
-        <div>
-          <h1>FitGestão</h1>
-          {session && (
-            <p style={{ fontSize: '0.9rem', color: '#666' }}>
-              Sessão iniciada como: <strong>{session.user.email}</strong>
-            </p>
-          )}
-        </div>
+    <main style={{ padding: '2rem', fontFamily: 'sans-serif', maxWidth: '800px', margin: '0 auto' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', borderBottom: '1px solid #ccc', paddingBottom: '1rem' }}>
+        <h1>FitGestão</h1>
         {session && (
           <button 
             onClick={() => supabase.auth.signOut()}
@@ -139,25 +150,66 @@ export default function Home() {
       </div>
 
       {!session ? (
-        <p>Por favor, faça login para aceder aos seus alunos.</p>
+        <div style={{ border: '1px solid #ccc', borderRadius: '8px', padding: '2rem', maxWidth: '400px', margin: '0 auto' }}>
+          <h2>{modoAuth === 'login' ? 'Acessar a Conta' : 'Criar Nova Conta'}</h2>
+          <form onSubmit={handleAuth} style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: '1rem' }}>
+            <div>
+              <label style={{ display: 'block', marginBottom: '0.3rem' }}>E-mail:</label>
+              <input
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                style={{ width: '100%', padding: '0.5rem', boxSizing: 'border-box' }}
+                placeholder="seu@email.com"
+              />
+            </div>
+            <div>
+              <label style={{ display: 'block', marginBottom: '0.3rem' }}>Senha:</label>
+              <input
+                type="password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                style={{ width: '100%', padding: '0.5rem', boxSizing: 'border-box' }}
+                placeholder="******"
+              />
+            </div>
+            <button type="submit" disabled={authCarregando} style={{ padding: '0.7rem', cursor: 'pointer', backgroundColor: '#0070f3', color: '#fff', border: 'none', borderRadius: '4px' }}>
+              {authCarregando ? 'A aguardar...' : modoAuth === 'login' ? 'Entrar' : 'Cadastrar'}
+            </button>
+          </form>
+          <p style={{ marginTop: '1rem', textAlign: 'center', fontSize: '0.9rem' }}>
+            <button 
+              onClick={() => setModoAuth(modoAuth === 'login' ? 'signup' : 'login')}
+              style={{ background: 'none', border: 'none', color: '#0070f3', cursor: 'pointer', textDecoration: 'underline' }}
+            >
+              {modoAuth === 'login' ? 'Não tem conta? Cadastre-se' : 'Já tem conta? Faça login'}
+            </button>
+          </p>
+        </div>
       ) : (
         <div>
+          <p style={{ marginBottom: '1.5rem', color: '#555' }}>
+            Sessão iniciada como: <strong>{session.user.email}</strong>
+          </p>
+
           <section style={{ border: '1px solid #ccc', borderRadius: '8px', padding: '1.5rem', marginBottom: '2rem' }}>
-            <h2>Cadastrar Aluno na Minha Academia</h2>
+            <h3>Cadastrar Aluno na Minha Academia</h3>
             <form onSubmit={handleCadastrarAluno} style={{ display: 'flex', gap: '1rem', marginTop: '1rem', flexWrap: 'wrap' }}>
               <input
                 type="text"
                 placeholder="Nome do aluno"
                 value={nome}
                 onChange={(e) => setNome(e.target.value)}
-                style={{ padding: '0.5rem', flex: '1', minWidth: '200px' }}
+                style={{ padding: '0.5rem', flex: '1', minWidth: '180px' }}
               />
               <input
                 type="text"
                 placeholder="Telefone"
                 value={telefone}
                 onChange={(e) => setTelefone(e.target.value)}
-                style={{ padding: '0.5rem', flex: '1', minWidth: '150px' }}
+                style={{ padding: '0.5rem', flex: '1', minWidth: '140px' }}
               />
               <select 
                 value={status} 
@@ -175,7 +227,7 @@ export default function Home() {
 
           <section style={{ border: '1px solid #ccc', borderRadius: '8px', padding: '1.5rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h2>Alunos Registados</h2>
+              <h3>Alunos Registados</h3>
               <span>Total: {alunos.length}</span>
             </div>
 
