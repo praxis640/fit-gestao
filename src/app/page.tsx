@@ -14,6 +14,7 @@ interface Aluno {
   dia_vencimento?: number;
   status_pagamento: 'Em Dia' | 'Pendente' | 'Atrasado';
   graduacao?: string;
+  created_at?: string;
   user_id?: string;
   academia_id?: string;
 }
@@ -46,6 +47,8 @@ export default function Home() {
   const [alunoSelecionadoId, setAlunoSelecionadoId] = useState<string | number | null>(null);
   const [mesAtual, setMesAtual] = useState<Date>(new Date());
 
+  // Form Aluno (Cadastro ou Edição)
+  const [editandoAlunoId, setEditandoAlunoId] = useState<string | number | null>(null);
   const [nome, setNome] = useState('');
   const [telefone, setTelefone] = useState('');
   const [planoSelecionadoNome, setPlanoSelecionadoNome] = useState<string>('Plano Mensal');
@@ -54,11 +57,13 @@ export default function Home() {
   const [statusPagamento, setStatusPagamento] = useState<'Em Dia' | 'Pendente' | 'Atrasado'>('Em Dia');
   const [graduacao, setGraduacao] = useState('Iniciante');
 
+  // Form Plano
   const [nomePlanoForm, setNomePlanoForm] = useState('');
   const [duracaoMesesForm, setDuracaoMesesForm] = useState<number>(1);
   const [valorTotalForm, setValorTotalForm] = useState('120.00');
   const [descricaoPlanoForm, setDescricaoPlanoForm] = useState('');
 
+  // Auth
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [modoAuth, setModoAuth] = useState<'login' | 'signup'>('login');
@@ -129,6 +134,24 @@ export default function Home() {
       const valorMensalEquivalente = (planoEncontrado.valor_total / planoEncontrado.duracao_meses).toFixed(2);
       setValorMensalidade(valorMensalEquivalente);
     }
+  }
+
+  // Calcular dias restantes do plano do aluno
+  function calcularDiasRestantes(aluno: Aluno) {
+    const planoEncontrado = planos.find(p => p.nome === aluno.plano_nome);
+    const mesesDuracao = planoEncontrado ? planoEncontrado.duracao_meses : 1; // Padrão 1 mês se não achar
+    
+    const dataCriacao = aluno.created_at ? new Date(aluno.created_at) : new Date();
+    const dataExpiracao = new Date(dataCriacao);
+    dataExpiracao.setMonth(dataExpiracao.getMonth() + mesesDuracao);
+
+    const hoje = new Date();
+    const diffTempo = dataExpiracao.getTime() - hoje.getTime();
+    const diffDias = Math.ceil(diffTempo / (1000 * 3600 * 24));
+
+    if (diffDias < 0) return 'Expirado';
+    if (diffDias === 0) return 'Expira hoje';
+    return `${diffDias} dias restantes`;
   }
 
   async function handleMarcarPresenca(alunoId: string | number) {
@@ -258,33 +281,69 @@ export default function Home() {
     setAuthCarregando(false);
   }
 
-  async function handleCadastrarAluno(e: React.FormEvent) {
+  // Cadastrar ou Atualizar Aluno
+  async function handleSalvarAluno(e: React.FormEvent) {
     e.preventDefault();
     if (!session?.user?.id || !nome.trim()) return;
 
     setCarregando(true);
-    const { error } = await supabase.from('alunos').insert([
-      {
-        nome,
-        telefone,
-        status: 'Ativo',
-        plano_nome: planoSelecionadoNome || 'Plano Mensal',
-        valor_mensalidade: parseFloat(valorMensalidade) || 0,
-        dia_vencimento: parseInt(diaVencimento) || 10,
-        status_pagamento: statusPagamento,
-        graduacao,
-        user_id: session.user.id,
-        academia_id: session.user.id
-      }
-    ]);
-    setCarregando(false);
 
-    if (error) alert('Erro ao cadastrar: ' + error.message);
-    else {
-      setNome('');
-      setTelefone('');
-      carregarDados();
+    const dadosAluno = {
+      nome,
+      telefone,
+      status: 'Ativo' as const,
+      plano_nome: planoSelecionadoNome || 'Plano Mensal',
+      valor_mensalidade: parseFloat(valorMensalidade) || 0,
+      dia_vencimento: parseInt(diaVencimento) || 10,
+      status_pagamento: statusPagamento,
+      graduacao,
+      user_id: session.user.id,
+      academia_id: session.user.id
+    };
+
+    if (editandoAlunoId) {
+      // Atualizar Aluno Existente
+      const { error } = await supabase.from('alunos').update(dadosAluno).eq('id', editandoAlunoId);
+      setCarregando(false);
+      if (error) alert('Erro ao atualizar: ' + error.message);
+      else {
+        alert('Aluno atualizado com sucesso!');
+        setEditandoAlunoId(null);
+        limparFormularioAluno();
+        carregarDados();
+      }
+    } else {
+      // Inserir Novo Aluno
+      const { error } = await supabase.from('alunos').insert([dadosAluno]);
+      setCarregando(false);
+      if (error) alert('Erro ao cadastrar: ' + error.message);
+      else {
+        limparFormularioAluno();
+        carregarDados();
+      }
     }
+  }
+
+  function limparFormularioAluno() {
+    setNome('');
+    setTelefone('');
+    setValorMensalidade('120.00');
+    setDiaVencimento('10');
+    setGraduacao('Iniciante');
+    setStatusPagamento('Em Dia');
+    setEditandoAlunoId(null);
+  }
+
+  function prepararEdicaoAluno(aluno: Aluno) {
+    setEditandoAlunoId(aluno.id || null);
+    setNome(aluno.nome);
+    setTelefone(aluno.telefone || '');
+    setPlanoSelecionadoNome(aluno.plano_nome || 'Plano Mensal');
+    setValorMensalidade(String(aluno.valor_mensalidade || 120));
+    setDiaVencimento(String(aluno.dia_vencimento || 10));
+    setStatusPagamento(aluno.status_pagamento || 'Em Dia');
+    setGraduacao(aluno.graduacao || 'Iniciante');
+    setAbaAtiva('Usuarios');
   }
 
   async function handleDarBaixa(id?: string | number) {
@@ -350,7 +409,7 @@ export default function Home() {
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'space-between', // Correção rigorosa para justifyContent
+                justifyContent: 'space-between',
                 padding: '0.65rem 0.9rem',
                 borderRadius: '8px',
                 border: 'none',
@@ -587,8 +646,16 @@ export default function Home() {
         {abaAtiva === 'Usuarios' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
             <div style={{ backgroundColor: '#1e2230', padding: '1.5rem', borderRadius: '12px', border: '1px solid #2a2f42' }}>
-              <h3 style={{ margin: '0 0 1rem 0' }}>Cadastrar Novo Aluno</h3>
-              <form onSubmit={handleCadastrarAluno} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                <h3 style={{ margin: 0 }}>{editandoAlunoId ? 'Editar Perfil do Aluno' : 'Cadastrar Novo Aluno'}</h3>
+                {editandoAlunoId && (
+                  <button onClick={limparFormularioAluno} style={{ padding: '0.3rem 0.8rem', backgroundColor: '#3a3f55', border: 'none', borderRadius: '4px', color: '#fff', cursor: 'pointer', fontSize: '0.8rem' }}>
+                    Cancelar Edição
+                  </button>
+                )}
+              </div>
+
+              <form onSubmit={handleSalvarAluno} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem' }}>
                 <input type="text" placeholder="Nome Completo *" value={nome} onChange={(e) => setNome(e.target.value)} required style={{ padding: '0.6rem', borderRadius: '6px', border: '1px solid #2a2f42', backgroundColor: '#13151f', color: '#fff' }} />
                 <input type="text" placeholder="Telefone" value={telefone} onChange={(e) => setTelefone(e.target.value)} style={{ padding: '0.6rem', borderRadius: '6px', border: '1px solid #2a2f42', backgroundColor: '#13151f', color: '#fff' }} />
                 
@@ -614,8 +681,8 @@ export default function Home() {
                   <option value="Pendente">Pendente</option>
                   <option value="Atrasado">Atrasado</option>
                 </select>
-                <button type="submit" disabled={carregando} style={{ padding: '0.6rem 1.5rem', borderRadius: '6px', border: 'none', backgroundColor: '#635bfc', color: '#fff', fontWeight: 'bold', cursor: 'pointer', gridColumn: '1 / -1' }}>
-                  {carregando ? 'Salvando...' : 'Cadastrar Aluno'}
+                <button type="submit" disabled={carregando} style={{ padding: '0.6rem 1.5rem', borderRadius: '6px', border: 'none', backgroundColor: editandoAlunoId ? '#22c55e' : '#635bfc', color: '#fff', fontWeight: 'bold', cursor: 'pointer', gridColumn: '1 / -1' }}>
+                  {carregando ? 'Salvando...' : editandoAlunoId ? 'Guardar Alterações do Aluno' : 'Cadastrar Aluno'}
                 </button>
               </form>
             </div>
@@ -631,36 +698,49 @@ export default function Home() {
                   <tr style={{ borderBottom: '1px solid #2a2f42', color: '#8a8f9d' }}>
                     <th style={{ padding: '0.8rem' }}>NOME</th>
                     <th style={{ padding: '0.8rem' }}>PLANO VINCULADO</th>
-                    <th style={{ padding: '0.8rem' }}>VALOR MENSAL</th>
-                    <th style={{ padding: '0.8rem' }}>VENC.</th>
+                    <th style={{ padding: '0.8rem' }}>CONTAGEM REGRESSIVA</th>
+                    <th style={{ padding: '0.8rem' }}>VALOR</th>
                     <th style={{ padding: '0.8rem' }}>PAGAMENTO</th>
                     <th style={{ padding: '0.8rem', textAlign: 'right' }}>AÇÕES</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {alunos.filter(a => a.nome.toLowerCase().includes(busca.toLowerCase())).map((aluno) => (
-                    <tr key={aluno.id} style={{ borderBottom: '1px solid #1a1d2b' }}>
-                      <td style={{ padding: '0.8rem' }}>{aluno.nome}</td>
-                      <td style={{ padding: '0.8rem' }}>
-                        <span style={{ padding: '0.2rem 0.5rem', borderRadius: '4px', backgroundColor: '#2a2f42', fontSize: '0.8rem', color: '#635bfc', fontWeight: 'bold' }}>
-                          {aluno.plano_nome || 'Plano Mensal'}
-                        </span>
-                      </td>
-                      <td style={{ padding: '0.8rem' }}>R$ {Number(aluno.valor_mensalidade || 0).toFixed(2)}</td>
-                      <td style={{ padding: '0.8rem' }}>Dia {aluno.dia_vencimento || 10}</td>
-                      <td style={{ padding: '0.8rem' }}>
-                        <span style={{ padding: '0.2rem 0.6rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold', backgroundColor: aluno.status_pagamento === 'Em Dia' ? '#166534' : '#991b1b', color: '#fff' }}>
-                          {aluno.status_pagamento}
-                        </span>
-                      </td>
-                      <td style={{ padding: '0.8rem', textAlign: 'right' }}>
-                        {aluno.status_pagamento !== 'Em Dia' && (
-                          <button onClick={() => handleDarBaixa(aluno.id)} style={{ padding: '0.3rem 0.6rem', marginRight: '0.5rem', backgroundColor: '#22c55e', border: 'none', borderRadius: '4px', color: '#fff', cursor: 'pointer' }}>Baixa</button>
-                        )}
-                        <button onClick={() => handleEliminar(aluno.id)} style={{ padding: '0.3rem 0.6rem', backgroundColor: '#ef4444', border: 'none', borderRadius: '4px', color: '#fff', cursor: 'pointer' }}>Excluir</button>
-                      </td>
-                    </tr>
-                  ))}
+                  {alunos.filter(a => a.nome.toLowerCase().includes(busca.toLowerCase())).map((aluno) => {
+                    const tempoRestante = calcularDiasRestantes(aluno);
+                    const isExpirado = tempoRestante.includes('Expirado') || tempoRestante.includes('Expira hoje');
+
+                    return (
+                      <tr key={aluno.id} style={{ borderBottom: '1px solid #1a1d2b' }}>
+                        <td style={{ padding: '0.8rem' }}>
+                          <div style={{ fontWeight: 'bold' }}>{aluno.nome}</div>
+                          <div style={{ fontSize: '0.75rem', color: '#8a8f9d' }}>{aluno.telefone || 'Sem telefone'}</div>
+                        </td>
+                        <td style={{ padding: '0.8rem' }}>
+                          <span style={{ padding: '0.2rem 0.5rem', borderRadius: '4px', backgroundColor: '#2a2f42', fontSize: '0.8rem', color: '#635bfc', fontWeight: 'bold' }}>
+                            {aluno.plano_nome || 'Plano Mensal'}
+                          </span>
+                        </td>
+                        <td style={{ padding: '0.8rem' }}>
+                          <span style={{ padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold', backgroundColor: isExpirado ? '#7f1d1d' : '#065f46', color: isExpirado ? '#fca5a5' : '#6ee7b7' }}>
+                            ⏳ {tempoRestante}
+                          </span>
+                        </td>
+                        <td style={{ padding: '0.8rem' }}>R$ {Number(aluno.valor_mensalidade || 0).toFixed(2)}</td>
+                        <td style={{ padding: '0.8rem' }}>
+                          <span style={{ padding: '0.2rem 0.6rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold', backgroundColor: aluno.status_pagamento === 'Em Dia' ? '#166534' : '#991b1b', color: '#fff' }}>
+                            {aluno.status_pagamento}
+                          </span>
+                        </td>
+                        <td style={{ padding: '0.8rem', textAlign: 'right' }}>
+                          <button onClick={() => prepararEdicaoAluno(aluno)} style={{ padding: '0.3rem 0.6rem', marginRight: '0.4rem', backgroundColor: '#3b82f6', border: 'none', borderRadius: '4px', color: '#fff', cursor: 'pointer' }}>Editar</button>
+                          {aluno.status_pagamento !== 'Em Dia' && (
+                            <button onClick={() => handleDarBaixa(aluno.id)} style={{ padding: '0.3rem 0.6rem', marginRight: '0.4rem', backgroundColor: '#22c55e', border: 'none', borderRadius: '4px', color: '#fff', cursor: 'pointer' }}>Baixa</button>
+                          )}
+                          <button onClick={() => handleEliminar(aluno.id)} style={{ padding: '0.3rem 0.6rem', backgroundColor: '#ef4444', border: 'none', borderRadius: '4px', color: '#fff', cursor: 'pointer' }}>Excluir</button>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
