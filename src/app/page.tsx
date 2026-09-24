@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { Session } from '@supabase/supabase-js';
 
 interface Aluno {
-  id?: number;
+  id?: string | number;
   nome: string;
   telefone?: string;
   status: 'Ativo' | 'Inativo';
@@ -18,14 +18,26 @@ interface Aluno {
   academia_id?: string;
 }
 
+interface Frequencia {
+  id?: number;
+  aluno_id: string | number;
+  data: string; // YYYY-MM-DD
+  user_id?: string;
+}
+
 export default function Home() {
   const [session, setSession] = useState<Session | null>(null);
   const [alunos, setAlunos] = useState<Aluno[]>([]);
+  const [frequencias, setFrequencias] = useState<Frequencia[]>([]);
   const [carregando, setCarregando] = useState(false);
   const [abaAtiva, setAbaAtiva] = useState<string>('Painel');
   const [busca, setBusca] = useState<string>('');
 
-  // Formulário de Cadastro de Aluno
+  // Estados de Frequência
+  const [alunoSelecionadoId, setAlunoSelecionadoId] = useState<string | number | null>(null);
+  const [mesAtual, setMesAtual] = useState<Date>(new Date());
+
+  // Form Aluno
   const [nome, setNome] = useState('');
   const [telefone, setTelefone] = useState('');
   const [planoNome, setPlanoNome] = useState('Mensal');
@@ -34,7 +46,7 @@ export default function Home() {
   const [statusPagamento, setStatusPagamento] = useState<'Em Dia' | 'Pendente' | 'Atrasado'>('Em Dia');
   const [graduacao, setGraduacao] = useState('Iniciante');
 
-  // Autenticação
+  // Auth
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [modoAuth, setModoAuth] = useState<'login' | 'signup'>('login');
@@ -46,23 +58,100 @@ export default function Home() {
     return () => subscription.unsubscribe();
   }, []);
 
-  async function carregarAlunos() {
+  async function carregarDados() {
     if (!session?.user?.id) return;
-    const { data, error } = await supabase
+
+    // Alunos
+    const { data: dataAlunos } = await supabase
       .from('alunos')
       .select('*')
       .or(`user_id.eq.${session.user.id},academia_id.eq.${session.user.id}`)
       .order('id', { ascending: false });
 
-    if (!error) setAlunos(data || []);
+    if (dataAlunos) {
+      setAlunos(dataAlunos);
+      if (dataAlunos.length > 0 && !alunoSelecionadoId) {
+        setAlunoSelecionadoId(dataAlunos[0].id || null);
+      }
+    }
+
+    // Frequencias
+    const { data: dataFreq } = await supabase
+      .from('frequencias')
+      .select('*')
+      .eq('user_id', session.user.id);
+
+    if (dataFreq) setFrequencias(dataFreq);
   }
 
   useEffect(() => {
-    if (session) carregarAlunos();
-    else setAlunos([]);
+    if (session) carregarDados();
+    else {
+      setAlunos([]);
+      setFrequencias([]);
+    }
   }, [session]);
 
-  // Cálculos do Dashboard
+  // Presença Hoje
+  async function handleMarcarPresenca(alunoId: string | number) {
+    if (!session?.user?.id) return;
+
+    const hoje = new Date().toISOString().split('T')[0];
+
+    const jaRegistrado = frequencias.some(f => String(f.aluno_id) === String(alunoId) && f.data === hoje);
+    if (jaRegistrado) {
+      alert('Presença já registrada para hoje!');
+      return;
+    }
+
+    const { error } = await supabase.from('frequencias').insert([
+      {
+        aluno_id: alunoId,
+        data: hoje,
+        user_id: session.user.id
+      }
+    ]);
+
+    if (error) alert('Erro ao registrar presença: ' + error.message);
+    else carregarDados();
+  }
+
+  // Calendário
+  const diasDoMes = useMemo(() => {
+    const ano = mesAtual.getFullYear();
+    const mes = mesAtual.getMonth();
+
+    const primeiroDia = new Date(ano, mes, 1);
+    const ultimoDia = new Date(ano, mes + 1, 0);
+
+    const dias = [];
+    const primeiroDiaSemana = primeiroDia.getDay();
+
+    for (let i = 0; i < primeiroDiaSemana; i++) {
+      dias.push(null);
+    }
+
+    for (let i = 1; i <= ultimoDia.getDate(); i++) {
+      const dataFormatada = `${ano}-${String(mes + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
+      dias.push({
+        dia: i,
+        dataStr: dataFormatada
+      });
+    }
+
+    return dias;
+  }, [mesAtual]);
+
+  const datasComPresenca = useMemo(() => {
+    if (!alunoSelecionadoId) return new Set();
+    return new Set(
+      frequencias
+        .filter(f => String(f.aluno_id) === String(alunoSelecionadoId))
+        .map(f => f.data)
+    );
+  }, [frequencias, alunoSelecionadoId]);
+
+  // KPIs
   const metricas = useMemo(() => {
     const totalUsuarios = alunos.length;
     const usuariosAtraso = alunos.filter((a) => a.status_pagamento !== 'Em Dia').length;
@@ -72,9 +161,8 @@ export default function Home() {
     const valoresAReceber = alunos
       .filter((a) => a.status_pagamento !== 'Em Dia')
       .reduce((acc, curr) => acc + (Number(curr.valor_mensalidade) || 0), 0);
-    const totalLucro = totalRecebido; // Pode subtrair despesas quando implementado
 
-    return { totalUsuarios, usuariosAtraso, totalRecebido, totalLucro, valoresAReceber };
+    return { totalUsuarios, usuariosAtraso, totalRecebido, totalLucro: totalRecebido, valoresAReceber };
   }, [alunos]);
 
   async function handleAuth(e: React.FormEvent) {
@@ -116,27 +204,27 @@ export default function Home() {
     else {
       setNome('');
       setTelefone('');
-      carregarAlunos();
+      carregarDados();
     }
   }
 
-  async function handleDarBaixa(id?: number) {
+  async function handleDarBaixa(id?: string | number) {
     if (!id) return;
     const { error } = await supabase.from('alunos').update({ status_pagamento: 'Em Dia' }).eq('id', id);
-    if (!error) carregarAlunos();
+    if (!error) carregarDados();
   }
 
-  async function handleEliminar(id?: number) {
+  async function handleEliminar(id?: string | number) {
     if (!id || !confirm('Deseja eliminar este registro?')) return;
     const { error } = await supabase.from('alunos').delete().eq('id', id);
-    if (!error) carregarAlunos();
+    if (!error) carregarDados();
   }
 
   if (!session) {
     return (
       <div style={{ backgroundColor: '#13151f', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontFamily: 'sans-serif' }}>
         <div style={{ backgroundColor: '#1e2230', padding: '2.5rem', borderRadius: '12px', width: '100%', maxWidth: '400px', border: '1px solid #2a2f42' }}>
-          <h2 style={{ textAlign: 'center', marginBottom: '1.5rem' }}>{modoAuth === 'login' ? 'FitGestão - Login' : 'Criar Conta'}</h2>
+          <h2 style={{ textAlign: 'center', marginBottom: '1.5rem' }}>FitGestão - Login</h2>
           <form onSubmit={handleAuth} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
             <input type="email" placeholder="E-mail" value={email} onChange={(e) => setEmail(e.target.value)} required style={{ padding: '0.8rem', borderRadius: '6px', border: '1px solid #2a2f42', backgroundColor: '#13151f', color: '#fff' }} />
             <input type="password" placeholder="Senha" value={password} onChange={(e) => setPassword(e.target.value)} required style={{ padding: '0.8rem', borderRadius: '6px', border: '1px solid #2a2f42', backgroundColor: '#13151f', color: '#fff' }} />
@@ -156,7 +244,7 @@ export default function Home() {
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: '#13151f', color: '#fff', fontFamily: 'sans-serif' }}>
-      {/* Sidebar Lateral */}
+      {/* Sidebar */}
       <aside style={{ width: '240px', backgroundColor: '#1a1d2b', borderRight: '1px solid #24283b', padding: '1.5rem 1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
         <h2 style={{ color: '#fff', fontSize: '1.4rem', marginBottom: '1.5rem', paddingLeft: '0.5rem' }}>FitGestão</h2>
         
@@ -187,8 +275,7 @@ export default function Home() {
               color: abaAtiva === item.nome ? '#fff' : '#8a8f9d',
               fontWeight: abaAtiva === item.nome ? 'bold' : 'normal',
               cursor: 'pointer',
-              textAlign: 'left',
-              transition: '0.2s'
+              textAlign: 'left'
             }}
           >
             <span>{item.icone}</span>
@@ -203,20 +290,18 @@ export default function Home() {
         </div>
       </aside>
 
-      {/* Conteúdo Principal */}
+      {/* Principal */}
       <main style={{ flex: 1, padding: '2rem', overflowY: 'auto' }}>
         
+        {/* Painel */}
         {abaAtiva === 'Painel' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-            
-            {/* Linha Superior: Banner de Boas-Vindas + Métricas Rápida */}
             <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '1.5rem' }}>
               <div style={{ backgroundColor: '#1e2230', padding: '1.5rem', borderRadius: '12px', border: '1px solid #2a2f42', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
                   <h3 style={{ margin: 0, fontSize: '1.2rem' }}>Bem Vindo Admin Principal! 🎉</h3>
                   <p style={{ color: '#8a8f9d', fontSize: '0.85rem', margin: '0.4rem 0 1rem 0' }}>Total de lucro no mês</p>
                   <h2 style={{ margin: 0, fontSize: '1.8rem', color: '#fff' }}>R$ {metricas.totalLucro.toFixed(2)}</h2>
-                  <button style={{ marginTop: '1rem', padding: '0.5rem 1rem', backgroundColor: '#635bfc', border: 'none', borderRadius: '6px', color: '#fff', cursor: 'pointer' }}>Ver Perfil</button>
                 </div>
                 <div style={{ fontSize: '4rem' }}>🧑‍💻</div>
               </div>
@@ -224,78 +309,112 @@ export default function Home() {
               <div style={{ backgroundColor: '#1e2230', padding: '1.5rem', borderRadius: '12px', border: '1px solid #2a2f42' }}>
                 <span style={{ color: '#8a8f9d', fontSize: '0.85rem' }}>👥 Total Usuários</span>
                 <h2 style={{ fontSize: '2rem', margin: '0.5rem 0' }}>{metricas.totalUsuarios}</h2>
-                <span style={{ color: '#52586d', fontSize: '0.75rem' }}>Em todos os anos</span>
               </div>
 
               <div style={{ backgroundColor: '#1e2230', padding: '1.5rem', borderRadius: '12px', border: '1px solid #2a2f42' }}>
                 <span style={{ color: '#8a8f9d', fontSize: '0.85rem' }}>🛑 Usuários em Atraso</span>
                 <h2 style={{ fontSize: '2rem', margin: '0.5rem 0', color: '#ff5c5c' }}>{metricas.usuariosAtraso}</h2>
-                <span style={{ color: '#52586d', fontSize: '0.75rem' }}>No geral</span>
               </div>
             </div>
+          </div>
+        )}
 
-            {/* Segunda Linha: KPIs Financeiros */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1.5rem' }}>
-              <div style={{ backgroundColor: '#1e2230', padding: '1.2rem', borderRadius: '12px', border: '1px solid #2a2f42' }}>
-                <span style={{ color: '#8a8f9d', fontSize: '0.8rem' }}>💵 Total Recebido</span>
-                <h3 style={{ margin: '0.5rem 0 0 0', color: '#22c55e' }}>{metricas.totalRecebido.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</h3>
+        {/* Frequência */}
+        {abaAtiva === 'Frequência' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            
+            <div style={{ backgroundColor: '#1e2230', padding: '1.5rem', borderRadius: '12px', border: '1px solid #2a2f42', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+              <div>
+                <h3 style={{ margin: 0 }}>Controlo de Frequência</h3>
+                <p style={{ color: '#8a8f9d', fontSize: '0.85rem', marginTop: '0.3rem' }}>Selecione o aluno para ver o calendário ou registrar presença.</p>
               </div>
-              <div style={{ backgroundColor: '#1e2230', padding: '1.2rem', borderRadius: '12px', border: '1px solid #2a2f42' }}>
-                <span style={{ color: '#8a8f9d', fontSize: '0.8rem' }}>🟣 Total Lucro</span>
-                <h3 style={{ margin: '0.5rem 0 0 0', color: '#a855f7' }}>{metricas.totalLucro.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</h3>
-              </div>
-              <div style={{ backgroundColor: '#1e2230', padding: '1.2rem', borderRadius: '12px', border: '1px solid #2a2f42' }}>
-                <span style={{ color: '#8a8f9d', fontSize: '0.8rem' }}>🔻 Total Despesas</span>
-                <h3 style={{ margin: '0.5rem 0 0 0', color: '#ef4444' }}>R$ 0,00</h3>
-              </div>
-              <div style={{ backgroundColor: '#1e2230', padding: '1.2rem', borderRadius: '12px', border: '1px solid #2a2f42' }}>
-                <span style={{ color: '#8a8f9d', fontSize: '0.8rem' }}>⏳ Valores a Receber</span>
-                <h3 style={{ margin: '0.5rem 0 0 0', color: '#eab308' }}>{metricas.valoresAReceber.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</h3>
-              </div>
-            </div>
 
-            {/* Terceira Linha: Gráfico de Receitas e Relação de Planos */}
-            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '1.5rem' }}>
-              {/* Gráfico de Receitas Simulado em Grid CSS */}
-              <div style={{ backgroundColor: '#1e2230', padding: '1.5rem', borderRadius: '12px', border: '1px solid #2a2f42' }}>
-                <h4 style={{ margin: 0 }}>Receitas</h4>
-                <p style={{ color: '#8a8f9d', fontSize: '0.8rem', marginTop: '0.2rem' }}>Lucro dos últimos 12 meses</p>
-                
-                <div style={{ height: '180px', display: 'flex', alignItems: 'flex-end', gap: '1rem', marginTop: '1.5rem', paddingBottom: '0.5rem', borderBottom: '1px solid #2a2f42' }}>
-                  {['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'].map((mes, idx) => (
-                    <div key={mes} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
-                      <div style={{ width: '100%', backgroundColor: '#635bfc', height: `${(idx + 1) * 12}px`, borderRadius: '4px 4px 0 0', opacity: 0.8 }}></div>
-                      <span style={{ fontSize: '0.7rem', color: '#8a8f9d' }}>{mes}</span>
-                    </div>
+              <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                <select
+                  value={alunoSelecionadoId || ''}
+                  onChange={(e) => setAlunoSelecionadoId(e.target.value)}
+                  style={{ padding: '0.6rem 1rem', borderRadius: '6px', border: '1px solid #2a2f42', backgroundColor: '#13151f', color: '#fff', fontSize: '0.9rem' }}
+                >
+                  {alunos.map((aluno) => (
+                    <option key={aluno.id} value={aluno.id}>{aluno.nome}</option>
                   ))}
-                </div>
+                </select>
+
+                {alunoSelecionadoId && (
+                  <button
+                    onClick={() => handleMarcarPresenca(alunoSelecionadoId)}
+                    style={{ padding: '0.6rem 1.2rem', borderRadius: '6px', border: 'none', backgroundColor: '#22c55e', color: '#fff', fontWeight: 'bold', cursor: 'pointer' }}
+                  >
+                    📍 Marcar Presença Hoje
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Calendário */}
+            <div style={{ backgroundColor: '#1e2230', padding: '1.5rem', borderRadius: '12px', border: '1px solid #2a2f42' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                <button
+                  onClick={() => setMesAtual(new Date(mesAtual.getFullYear(), mesAtual.getMonth() - 1, 1))}
+                  style={{ padding: '0.4rem 0.8rem', backgroundColor: '#13151f', border: '1px solid #2a2f42', color: '#fff', borderRadius: '4px', cursor: 'pointer' }}
+                >
+                  ◀ Mês Anterior
+                </button>
+
+                <h3 style={{ margin: 0 }}>
+                  {mesAtual.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }).toUpperCase()}
+                </h3>
+
+                <button
+                  onClick={() => setMesAtual(new Date(mesAtual.getFullYear(), mesAtual.getMonth() + 1, 1))}
+                  style={{ padding: '0.4rem 0.8rem', backgroundColor: '#13151f', border: '1px solid #2a2f42', color: '#fff', borderRadius: '4px', cursor: 'pointer' }}
+                >
+                  Próximo Mês ▶
+                </button>
               </div>
 
-              {/* Relação de Planos */}
-              <div style={{ backgroundColor: '#1e2230', padding: '1.5rem', borderRadius: '12px', border: '1px solid #2a2f42' }}>
-                <h4 style={{ margin: 0 }}>Relação de Planos</h4>
-                <p style={{ color: '#8a8f9d', fontSize: '0.8rem', marginTop: '0.2rem' }}>Planos mais adquiridos</p>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: '1.5rem' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', padding: '0.5rem', backgroundColor: '#13151f', borderRadius: '6px' }}>
-                    <span>Plano Mensal</span>
-                    <span style={{ color: '#635bfc', fontWeight: 'bold' }}>{alunos.filter(a => a.plano_nome === 'Mensal').length} alunos</span>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '0.5rem', textAlign: 'center' }}>
+                {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map((dia) => (
+                  <div key={dia} style={{ padding: '0.5rem', fontWeight: 'bold', color: '#8a8f9d', fontSize: '0.85rem' }}>
+                    {dia}
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', padding: '0.5rem', backgroundColor: '#13151f', borderRadius: '6px' }}>
-                    <span>Plano VIP / Anual</span>
-                    <span style={{ color: '#635bfc', fontWeight: 'bold' }}>{alunos.filter(a => a.plano_nome !== 'Mensal').length} alunos</span>
-                  </div>
-                </div>
+                ))}
+
+                {diasDoMes.map((item, index) => {
+                  if (!item) return <div key={`vazio-${index}`} style={{ padding: '1rem' }}></div>;
+
+                  const temPresenca = datasComPresenca.has(item.dataStr);
+
+                  return (
+                    <div
+                      key={item.dataStr}
+                      style={{
+                        padding: '1rem 0.5rem',
+                        borderRadius: '8px',
+                        backgroundColor: temPresenca ? '#166534' : '#13151f',
+                        border: temPresenca ? '1px solid #22c55e' : '1px solid #2a2f42',
+                        color: temPresenca ? '#fff' : '#8a8f9d',
+                        fontWeight: temPresenca ? 'bold' : 'normal',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        gap: '0.3rem'
+                      }}
+                    >
+                      <span>{item.dia}</span>
+                      {temPresenca && <span style={{ fontSize: '0.7rem', color: '#4ade80' }}>✓ Presente</span>}
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
           </div>
         )}
 
-        {/* Aba Usuários (Listagem e Cadastro) */}
-        {(abaAtiva === 'Usuários' || abaAtiva === 'Painel') && (
-          <div style={{ marginTop: abaAtiva === 'Painel' ? '2rem' : 0, display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-            
-            {/* Form de Cadastro */}
+        {/* Usuários */}
+        {abaAtiva === 'Usuários' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
             <div style={{ backgroundColor: '#1e2230', padding: '1.5rem', borderRadius: '12px', border: '1px solid #2a2f42' }}>
               <h3 style={{ margin: '0 0 1rem 0' }}>Cadastrar Novo Aluno</h3>
               <form onSubmit={handleCadastrarAluno} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem' }}>
@@ -316,7 +435,6 @@ export default function Home() {
               </form>
             </div>
 
-            {/* Tabela de Alunos */}
             <div style={{ backgroundColor: '#1e2230', padding: '1.5rem', borderRadius: '12px', border: '1px solid #2a2f42' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                 <h3 style={{ margin: 0 }}>Lista de Alunos</h3>
@@ -357,15 +475,6 @@ export default function Home() {
                 </tbody>
               </table>
             </div>
-
-          </div>
-        )}
-
-        {/* Mensagem Padrão para Outras Abas */}
-        {abaAtiva !== 'Painel' && abaAtiva !== 'Usuários' && (
-          <div style={{ backgroundColor: '#1e2230', padding: '3rem', borderRadius: '12px', border: '1px solid #2a2f42', textAlign: 'center' }}>
-            <h2>Módulo de {abaAtiva}</h2>
-            <p style={{ color: '#8a8f9d', marginTop: '0.5rem' }}>Esta secção está pronta para ser conectada às tabelas de {abaAtiva.toLowerCase()} do Supabase.</p>
           </div>
         )}
 
