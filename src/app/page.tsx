@@ -46,7 +46,6 @@ export default function Home() {
   const [alunoSelecionadoId, setAlunoSelecionadoId] = useState<string | number | null>(null);
   const [mesAtual, setMesAtual] = useState<Date>(new Date());
 
-  // Form Aluno
   const [nome, setNome] = useState('');
   const [telefone, setTelefone] = useState('');
   const [planoSelecionadoNome, setPlanoSelecionadoNome] = useState<string>('Plano Mensal');
@@ -55,13 +54,11 @@ export default function Home() {
   const [statusPagamento, setStatusPagamento] = useState<'Em Dia' | 'Pendente' | 'Atrasado'>('Em Dia');
   const [graduacao, setGraduacao] = useState('Iniciante');
 
-  // Form Plano
   const [nomePlanoForm, setNomePlanoForm] = useState('');
   const [duracaoMesesForm, setDuracaoMesesForm] = useState<number>(1);
   const [valorTotalForm, setValorTotalForm] = useState('120.00');
   const [descricaoPlanoForm, setDescricaoPlanoForm] = useState('');
 
-  // Auth
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [modoAuth, setModoAuth] = useState<'login' | 'signup'>('login');
@@ -76,7 +73,6 @@ export default function Home() {
   async function carregarDados() {
     if (!session?.user?.id) return;
 
-    // Alunos
     const { data: dataAlunos } = await supabase
       .from('alunos')
       .select('*')
@@ -90,7 +86,6 @@ export default function Home() {
       }
     }
 
-    // Frequencias
     const { data: dataFreq } = await supabase
       .from('frequencias')
       .select('*')
@@ -98,7 +93,6 @@ export default function Home() {
 
     if (dataFreq) setFrequencias(dataFreq);
 
-    // Planos
     const { data: dataPlanos } = await supabase
       .from('planos')
       .select('*')
@@ -356,7 +350,7 @@ export default function Home() {
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'space-between',
+                justify: 'space-between',
                 padding: '0.65rem 0.9rem',
                 borderRadius: '8px',
                 border: 'none',
