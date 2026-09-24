@@ -156,9 +156,7 @@ export default function Home() {
     return `${diffDias} dias restantes`;
   }
 
-  // Cálculos do Módulo Financeiro com base no mês selecionado
   const analiseFinanceira = useMemo(() => {
-    const totalAlunos = alunos.length;
     const receitaEfetivaMes = alunos
       .filter((a) => a.status_pagamento === 'Em Dia')
       .reduce((acc, curr) => acc + (Number(curr.valor_mensalidade) || 0), 0);
@@ -169,7 +167,6 @@ export default function Home() {
 
     const potencialTotal = receitaEfetivaMes + inadimplenciaMes;
 
-    // Simulação de projeção para os próximos meses baseada na base atual de alunos
     const projecaoMes1 = potencialTotal * 1.05;
     const projecaoMes2 = potencialTotal * 1.08;
     const projecaoMes3 = potencialTotal * 1.12;
@@ -178,7 +175,6 @@ export default function Home() {
       receitaEfetivaMes,
       inadimplenciaMes,
       potencialTotal,
-      totalAlunos,
       projecaoMes1,
       projecaoMes2,
       projecaoMes3
@@ -496,7 +492,6 @@ export default function Home() {
         {abaAtiva === 'Financeiro' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
             
-            {/* Seletor de Mês e Cabeçalho */}
             <div style={{ backgroundColor: '#1e2230', padding: '1.5rem', borderRadius: '12px', border: '1px solid #2a2f42', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
               <div>
                 <h3 style={{ margin: 0, fontSize: '1.3rem' }}>Análise e Projeção Financeira</h3>
@@ -524,7 +519,6 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Cards de Resumo do Mês Selecionado */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1.5rem' }}>
               <div style={{ backgroundColor: '#1e2230', padding: '1.5rem', borderRadius: '12px', border: '1px solid #2a2f42' }}>
                 <span style={{ color: '#8a8f9d', fontSize: '0.85rem' }}>💵 Entradas Efetivas (Recebido)</span>
@@ -545,7 +539,6 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Expectativa dos Meses Posteriores (Projeções) */}
             <div style={{ backgroundColor: '#1e2230', padding: '1.5rem', borderRadius: '12px', border: '1px solid #2a2f42' }}>
               <h3 style={{ margin: '0 0 1rem 0' }}>🔮 Expectativa de Faturamento para os Próximos Meses</h3>
               <p style={{ color: '#8a8f9d', fontSize: '0.85rem', marginBottom: '1.5rem' }}>Projeção baseada na retenção atual e contratos recorrentes de planos ativos.</p>
@@ -553,7 +546,7 @@ export default function Home() {
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.5rem' }}>
                 <div style={{ backgroundColor: '#13151f', padding: '1.2rem', borderRadius: '8px', border: '1px solid #2a2f42' }}>
                   <span style={{ color: '#8a8f9d', fontSize: '0.85rem' }}>
-                    {new Date(mesFinanceira.getFullYear(), mesFinanceira.getMonth() + 1, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }).toUpperCase()}
+                    {new Date(mesFinanceiro.getFullYear(), mesFinanceiro.getMonth() + 1, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }).toUpperCase()}
                   </span>
                   <h3 style={{ color: '#22c55e', margin: '0.5rem 0 0 0', fontSize: '1.5rem' }}>R$ {analiseFinanceira.projecaoMes1.toFixed(2)}</h3>
                   <span style={{ fontSize: '0.75rem', color: '#8a8f9d' }}>Estimativa +5% crescimento</span>
@@ -561,7 +554,7 @@ export default function Home() {
 
                 <div style={{ backgroundColor: '#13151f', padding: '1.2rem', borderRadius: '8px', border: '1px solid #2a2f42' }}>
                   <span style={{ color: '#8a8f9d', fontSize: '0.85rem' }}>
-                    {new Date(mesFinanceira.getFullYear(), mesFinanceira.getMonth() + 2, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }).toUpperCase()}
+                    {new Date(mesFinanceiro.getFullYear(), mesFinanceiro.getMonth() + 2, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }).toUpperCase()}
                   </span>
                   <h3 style={{ color: '#22c55e', margin: '0.5rem 0 0 0', fontSize: '1.5rem' }}>R$ {analiseFinanceira.projecaoMes2.toFixed(2)}</h3>
                   <span style={{ fontSize: '0.75rem', color: '#8a8f9d' }}>Estimativa +8% crescimento</span>
@@ -569,7 +562,7 @@ export default function Home() {
 
                 <div style={{ backgroundColor: '#13151f', padding: '1.2rem', borderRadius: '8px', border: '1px solid #2a2f42' }}>
                   <span style={{ color: '#8a8f9d', fontSize: '0.85rem' }}>
-                    {new Date(mesFinanceira.getFullYear(), mesFinanceira.getMonth() + 3, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }).toUpperCase()}
+                    {new Date(mesFinanceiro.getFullYear(), mesFinanceiro.getMonth() + 3, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }).toUpperCase()}
                   </span>
                   <h3 style={{ color: '#22c55e', margin: '0.5rem 0 0 0', fontSize: '1.5rem' }}>R$ {analiseFinanceira.projecaoMes3.toFixed(2)}</h3>
                   <span style={{ fontSize: '0.75rem', color: '#8a8f9d' }}>Estimativa +12% crescimento</span>
