@@ -46,19 +46,22 @@ export default function Home() {
   const [alunoSelecionadoId, setAlunoSelecionadoId] = useState<string | number | null>(null);
   const [mesAtual, setMesAtual] = useState<Date>(new Date());
 
+  // Form Aluno
   const [nome, setNome] = useState('');
   const [telefone, setTelefone] = useState('');
-  const [planoNome, setPlanoNome] = useState('Mensal');
+  const [planoSelecionadoId, setPlanoSelecionadoId] = useState<string>('');
   const [valorMensalidade, setValorMensalidade] = useState('120.00');
   const [diaVencimento, setDiaVencimento] = useState('10');
   const [statusPagamento, setStatusPagamento] = useState<'Em Dia' | 'Pendente' | 'Atrasado'>('Em Dia');
   const [graduacao, setGraduacao] = useState('Iniciante');
 
+  // Form Plano
   const [nomePlanoForm, setNomePlanoForm] = useState('');
   const [duracaoMesesForm, setDuracaoMesesForm] = useState<number>(1);
   const [valorTotalForm, setValorTotalForm] = useState('120.00');
   const [descricaoPlanoForm, setDescricaoPlanoForm] = useState('');
 
+  // Auth
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [modoAuth, setModoAuth] = useState<'login' | 'signup'>('login');
@@ -73,6 +76,7 @@ export default function Home() {
   async function carregarDados() {
     if (!session?.user?.id) return;
 
+    // Alunos
     const { data: dataAlunos } = await supabase
       .from('alunos')
       .select('*')
@@ -86,6 +90,7 @@ export default function Home() {
       }
     }
 
+    // Frequencias
     const { data: dataFreq } = await supabase
       .from('frequencias')
       .select('*')
@@ -93,6 +98,7 @@ export default function Home() {
 
     if (dataFreq) setFrequencias(dataFreq);
 
+    // Planos
     const { data: dataPlanos } = await supabase
       .from('planos')
       .select('*')
@@ -100,13 +106,16 @@ export default function Home() {
 
     if (dataPlanos && dataPlanos.length > 0) {
       setPlanos(dataPlanos);
+      if (!planoSelecionadoId) setPlanoSelecionadoId(String(dataPlanos[0].nome));
     } else {
-      setPlanos([
+      const planosPadrao: Plano[] = [
         { id: '1', nome: 'Plano Mensal', duracao_meses: 1, valor_total: 120.00, descricao: 'Acesso total de 1 mês' },
         { id: '2', nome: 'Plano Trimestral', duracao_meses: 3, valor_total: 330.00, descricao: 'Desconto equivalente a R$ 110/mês' },
         { id: '3', nome: 'Plano Semestral', duracao_meses: 6, valor_total: 600.00, descricao: 'Desconto equivalente a R$ 100/mês' },
         { id: '4', nome: 'Plano Anual VIP', duracao_meses: 12, valor_total: 1080.00, descricao: 'Melhor valor: R$ 90/mês' },
-      ]);
+      ];
+      setPlanos(planosPadrao);
+      if (!planoSelecionadoId) setPlanoSelecionadoId(planosPadrao[0].nome);
     }
   }
 
@@ -118,6 +127,16 @@ export default function Home() {
       setPlanos([]);
     }
   }, [session]);
+
+  // Atualizar valor da mensalidade ao escolher um plano no formulário de alunos
+  function handleSelecionarPlanoAluno(nomePlano: string) {
+    setPlanoSelecionadoId(nomePlano);
+    const planoEncontrado = planos.find(p => p.nome === nomePlano);
+    if (planoEncontrado) {
+      const valorMensalEquivalente = (planoEncontrado.valor_total / planoEncontrado.duracao_meses).toFixed(2);
+      setValorMensalidade(valorMensalEquivalente);
+    }
+  }
 
   async function handleMarcarPresenca(alunoId: string | number) {
     if (!session?.user?.id) return;
@@ -256,7 +275,7 @@ export default function Home() {
         nome,
         telefone,
         status: 'Ativo',
-        plano_nome: planoNome,
+        plano_nome: planoSelecionadoId || 'Mensal',
         valor_mensalidade: parseFloat(valorMensalidade) || 0,
         dia_vencimento: parseInt(diaVencimento) || 10,
         status_pagamento: statusPagamento,
@@ -338,7 +357,7 @@ export default function Home() {
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'space-between',
+                justify: 'space-between',
                 padding: '0.65rem 0.9rem',
                 borderRadius: '8px',
                 border: 'none',
@@ -368,6 +387,7 @@ export default function Home() {
 
       <main style={{ flex: 1, padding: '2rem', overflowY: 'auto' }}>
         
+        {/* Painel */}
         {abaAtiva === 'Painel' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
             <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '1.5rem' }}>
@@ -393,6 +413,7 @@ export default function Home() {
           </div>
         )}
 
+        {/* Planos */}
         {abaAtiva === 'Planos' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
             <div style={{ backgroundColor: '#1e2230', padding: '1.5rem', borderRadius: '12px', border: '1px solid #2a2f42' }}>
@@ -483,6 +504,7 @@ export default function Home() {
           </div>
         )}
 
+        {/* Frequência */}
         {abaAtiva === 'Frequência' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
             <div style={{ backgroundColor: '#1e2230', padding: '1.5rem', borderRadius: '12px', border: '1px solid #2a2f42', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
@@ -572,6 +594,7 @@ export default function Home() {
           </div>
         )}
 
+        {/* Usuarios com Seleção de Plano */}
         {abaAtiva === 'Usuarios' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
             <div style={{ backgroundColor: '#1e2230', padding: '1.5rem', borderRadius: '12px', border: '1px solid #2a2f42' }}>
@@ -579,7 +602,18 @@ export default function Home() {
               <form onSubmit={handleCadastrarAluno} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem' }}>
                 <input type="text" placeholder="Nome Completo *" value={nome} onChange={(e) => setNome(e.target.value)} required style={{ padding: '0.6rem', borderRadius: '6px', border: '1px solid #2a2f42', backgroundColor: '#13151f', color: '#fff' }} />
                 <input type="text" placeholder="Telefone" value={telefone} onChange={(e) => setTelefone(e.target.value)} style={{ padding: '0.6rem', borderRadius: '6px', border: '1px solid #2a2f42', backgroundColor: '#13151f', color: '#fff' }} />
-                <input type="text" placeholder="Plano" value={planoNome} onChange={(e) => setPlanoNome(e.target.value)} style={{ padding: '0.6rem', borderRadius: '6px', border: '1px solid #2a2f42', backgroundColor: '#13151f', color: '#fff' }} />
+                
+                {/* Seleção do Plano Cadastrado */}
+                <select
+                  value={planoSelecionadoId}
+                  onChange={(e) => handleSelecionarPlanoAluno(e.target.value)}
+                  style={{ padding: '0.6rem', borderRadius: '6px', border: '1px solid #2a2f42', backgroundColor: '#13151f', color: '#fff' }}
+                >
+                  {planos.map((p) => (
+                    <option key={p.id} value={p.nome}>{p.nome}</option>
+                  ))}
+                </select>
+
                 <input type="number" placeholder="Valor (R$)" value={valorMensalidade} onChange={(e) => setValorMensalidade(e.target.value)} style={{ padding: '0.6rem', borderRadius: '6px', border: '1px solid #2a2f42', backgroundColor: '#13151f', color: '#fff' }} />
                 <input type="number" placeholder="Dia Vencimento" value={diaVencimento} onChange={(e) => setDiaVencimento(e.target.value)} style={{ padding: '0.6rem', borderRadius: '6px', border: '1px solid #2a2f42', backgroundColor: '#13151f', color: '#fff' }} />
                 <input type="text" placeholder="Nível / Faixa" value={graduacao} onChange={(e) => setGraduacao(e.target.value)} style={{ padding: '0.6rem', borderRadius: '6px', border: '1px solid #2a2f42', backgroundColor: '#13151f', color: '#fff' }} />
@@ -608,8 +642,8 @@ export default function Home() {
                 <thead>
                   <tr style={{ borderBottom: '1px solid #2a2f42', color: '#8a8f9d' }}>
                     <th style={{ padding: '0.8rem' }}>NOME</th>
-                    <th style={{ padding: '0.8rem' }}>PLANO</th>
-                    <th style={{ padding: '0.8rem' }}>VALOR</th>
+                    <th style={{ padding: '0.8rem' }}>PLANO VINCULADO</th>
+                    <th style={{ padding: '0.8rem' }}>VALOR MENSAL</th>
                     <th style={{ padding: '0.8rem' }}>VENC.</th>
                     <th style={{ padding: '0.8rem' }}>PAGAMENTO</th>
                     <th style={{ padding: '0.8rem', textAlign: 'right' }}>AÇÕES</th>
@@ -619,7 +653,11 @@ export default function Home() {
                   {alunos.filter(a => a.nome.toLowerCase().includes(busca.toLowerCase())).map((aluno) => (
                     <tr key={aluno.id} style={{ borderBottom: '1px solid #1a1d2b' }}>
                       <td style={{ padding: '0.8rem' }}>{aluno.nome}</td>
-                      <td style={{ padding: '0.8rem' }}>{aluno.plano_nome || 'Mensal'}</td>
+                      <td style={{ padding: '0.8rem' }}>
+                        <span style={{ padding: '0.2rem 0.5rem', borderRadius: '4px', backgroundColor: '#2a2f42', fontSize: '0.8rem', color: '#635bfc', fontWeight: 'bold' }}>
+                          {aluno.plano_nome || 'Mensal'}
+                        </span>
+                      </td>
                       <td style={{ padding: '0.8rem' }}>R$ {Number(aluno.valor_mensalidade || 0).toFixed(2)}</td>
                       <td style={{ padding: '0.8rem' }}>Dia {aluno.dia_vencimento || 10}</td>
                       <td style={{ padding: '0.8rem' }}>
