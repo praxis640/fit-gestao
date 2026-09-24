@@ -192,7 +192,105 @@ export default function Home() {
     return { totalUsuarios, usuariosAtraso, totalRecebido, totalLucro: totalRecebido, valoresAReceber };
   }, [alunos]);
 
-  // Funções de Download de Relatórios
+  async function handleMarcarPresenca(alunoId: string | number) {
+    if (!session?.user?.id) return;
+
+    const hoje = new Date().toISOString().split('T')[0];
+    const jaRegistrado = frequencias.some(f => String(f.aluno_id) === String(alunoId) && f.data === hoje);
+    if (jaRegistrado) {
+      alert('Presença já registrada para hoje!');
+      return;
+    }
+
+    const { error } = await supabase.from('frequencias').insert([
+      {
+        aluno_id: alunoId,
+        data: hoje,
+        user_id: session.user.id
+      }
+    ]);
+
+    if (error) alert('Erro ao registrar presença: ' + error.message);
+    else carregarDados();
+  }
+
+  async function handleCadastrarPlano(e: React.FormEvent) {
+    e.preventDefault();
+    if (!session?.user?.id || !nomePlanoForm.trim()) return;
+
+    setCarregando(true);
+    const { error } = await supabase.from('planos').insert([
+      {
+        nome: nomePlanoForm,
+        duracao_meses: Number(duracaoMesesForm),
+        valor_total: parseFloat(valorTotalForm) || 0,
+        descricao: descricaoPlanoForm,
+        user_id: session.user.id
+      }
+    ]);
+    setCarregando(false);
+
+    if (error) {
+      const novoPlano: Plano = {
+        id: Date.now().toString(),
+        nome: nomePlanoForm,
+        duracao_meses: Number(duracaoMesesForm),
+        valor_total: parseFloat(valorTotalForm) || 0,
+        descricao: descricaoPlanoForm
+      };
+      setPlanos(prev => [...prev, novoPlano]);
+    } else {
+      carregarDados();
+    }
+
+    setNomePlanoForm('');
+    setDescricaoPlanoForm('');
+  }
+
+  async function handleEliminarPlano(id?: string | number) {
+    if (!id || !confirm('Deseja eliminar este plano?')) return;
+    const { error } = await supabase.from('planos').delete().eq('id', id);
+    if (error) {
+      setPlanos(prev => prev.filter(p => p.id !== id));
+    } else {
+      carregarDados();
+    }
+  }
+
+  const diasDoMes = useMemo(() => {
+    const ano = mesAtual.getFullYear();
+    const mes = mesAtual.getMonth();
+
+    const primeiroDia = new Date(ano, mes, 1);
+    const ultimoDia = new Date(ano, mes + 1, 0);
+
+    const dias = [];
+    const primeiroDiaSemana = primeiroDia.getDay();
+
+    for (let i = 0; i < primeiroDiaSemana; i++) {
+      dias.push(null);
+    }
+
+    for (let i = 1; i <= ultimoDia.getDate(); i++) {
+      const dataFormatada = `${ano}-${String(mes + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
+      dias.push({
+        dia: i,
+        dataStr: dataFormatada
+      });
+    }
+
+    return dias;
+  }, [mesAtual]);
+
+  const datasComPresenca = useMemo(() => {
+    if (!alunoSelecionadoId) return new Set();
+    return new Set(
+      frequencias
+        .filter(f => String(f.aluno_id) === String(alunoSelecionadoId))
+        .map(f => f.data)
+    );
+  }, [frequencias, alunoSelecionadoId]);
+
   function baixarRelatorioFinanceiroTXT() {
     const conteudo = `========================================\n` +
       `       FITGESTÃO - RELATÓRIO FINANCEIRO\n` +
@@ -440,17 +538,15 @@ export default function Home() {
           </div>
         )}
 
-        {/* MÓDULO RELATÓRIOS */}
         {abaAtiva === 'Relatorios' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-            
             <div style={{ backgroundColor: '#1e2230', padding: '1.5rem', borderRadius: '12px', border: '1px solid #2a2f42', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
               <div>
                 <h3 style={{ margin: 0, fontSize: '1.3rem' }}>Central de Relatórios</h3>
                 <p style={{ color: '#8a8f9d', fontSize: '0.85rem', marginTop: '0.3rem' }}>Visualize e descarregue relatórios consolidados da gestão.</p>
               </div>
 
-              <div style={{ display: 'flex', gap: '1rem' }}>
+              <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
                 <button
                   onClick={baixarRelatorioFinanceiroTXT}
                   style={{ padding: '0.6rem 1.2rem', borderRadius: '6px', border: 'none', backgroundColor: '#22c55e', color: '#fff', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.85rem' }}
@@ -466,7 +562,6 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Visualização Financeira Completa em Relatórios */}
             <div style={{ backgroundColor: '#1e2230', padding: '1.5rem', borderRadius: '12px', border: '1px solid #2a2f42' }}>
               <h3 style={{ margin: '0 0 1rem 0', color: '#635bfc' }}>📊 Visão Geral Financeira Atual</h3>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
@@ -485,7 +580,6 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Relatório de Alunos Completo */}
             <div style={{ backgroundColor: '#1e2230', padding: '1.5rem', borderRadius: '12px', border: '1px solid #2a2f42' }}>
               <h3 style={{ margin: '0 0 1rem 0', color: '#635bfc' }}>👥 Relatório Consolidado de Alunos</h3>
               <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
@@ -517,14 +611,11 @@ export default function Home() {
                 </tbody>
               </table>
             </div>
-
           </div>
         )}
 
-        {/* MÓDULO FINANCEIRO AVANÇADO */}
         {abaAtiva === 'Financeiro' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-            
             <div style={{ backgroundColor: '#1e2230', padding: '1.5rem', borderRadius: '12px', border: '1px solid #2a2f42', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
               <div>
                 <h3 style={{ margin: 0, fontSize: '1.3rem' }}>Análise e Projeção Financeira</h3>
@@ -602,7 +693,6 @@ export default function Home() {
                 </div>
               </div>
             </div>
-
           </div>
         )}
 
@@ -754,7 +844,7 @@ export default function Home() {
                   </div>
                 ))}
 
-                {diasDoMes.map((item, index) => {
+                {diasDoMes.map((item: { dia: number; dataStr: string } | null, index: number) => {
                   if (!item) return <div key={`vazio-${index}`} style={{ padding: '1rem' }}></div>;
 
                   const temPresenca = datasComPresenca.has(item.dataStr);
