@@ -46,8 +46,6 @@ export default function Home() {
 
   const [alunoSelecionadoId, setAlunoSelecionadoId] = useState<string | number | null>(null);
   const [mesAtual, setMesAtual] = useState<Date>(new Date());
-
-  // Navegador do Módulo Financeiro
   const [mesFinanceiro, setMesFinanceiro] = useState<Date>(new Date());
 
   // Form Aluno (Cadastro ou Edição)
@@ -181,106 +179,6 @@ export default function Home() {
     };
   }, [alunos, mesFinanceiro]);
 
-  async function handleMarcarPresenca(alunoId: string | number) {
-    if (!session?.user?.id) return;
-
-    const hoje = new Date().toISOString().split('T')[0];
-
-    const jaRegistrado = frequencias.some(f => String(f.aluno_id) === String(alunoId) && f.data === hoje);
-    if (jaRegistrado) {
-      alert('Presença já registrada para hoje!');
-      return;
-    }
-
-    const { error } = await supabase.from('frequencias').insert([
-      {
-        aluno_id: alunoId,
-        data: hoje,
-        user_id: session.user.id
-      }
-    ]);
-
-    if (error) alert('Erro ao registrar presença: ' + error.message);
-    else carregarDados();
-  }
-
-  async function handleCadastrarPlano(e: React.FormEvent) {
-    e.preventDefault();
-    if (!session?.user?.id || !nomePlanoForm.trim()) return;
-
-    setCarregando(true);
-    const { error } = await supabase.from('planos').insert([
-      {
-        nome: nomePlanoForm,
-        duracao_meses: Number(duracaoMesesForm),
-        valor_total: parseFloat(valorTotalForm) || 0,
-        descricao: descricaoPlanoForm,
-        user_id: session.user.id
-      }
-    ]);
-    setCarregando(false);
-
-    if (error) {
-      const novoPlano: Plano = {
-        id: Date.now().toString(),
-        nome: nomePlanoForm,
-        duracao_meses: Number(duracaoMesesForm),
-        valor_total: parseFloat(valorTotalForm) || 0,
-        descricao: descricaoPlanoForm
-      };
-      setPlanos(prev => [...prev, novoPlano]);
-    } else {
-      carregarDados();
-    }
-
-    setNomePlanoForm('');
-    setDescricaoPlanoForm('');
-  }
-
-  async function handleEliminarPlano(id?: string | number) {
-    if (!id || !confirm('Deseja eliminar este plano?')) return;
-    const { error } = await supabase.from('planos').delete().eq('id', id);
-    if (error) {
-      setPlanos(prev => prev.filter(p => p.id !== id));
-    } else {
-      carregarDados();
-    }
-  }
-
-  const diasDoMes = useMemo(() => {
-    const ano = mesAtual.getFullYear();
-    const mes = mesAtual.getMonth();
-
-    const primeiroDia = new Date(ano, mes, 1);
-    const ultimoDia = new Date(ano, mes + 1, 0);
-
-    const dias = [];
-    const primeiroDiaSemana = primeiroDia.getDay();
-
-    for (let i = 0; i < primeiroDiaSemana; i++) {
-      dias.push(null);
-    }
-
-    for (let i = 1; i <= ultimoDia.getDate(); i++) {
-      const dataFormatada = `${ano}-${String(mes + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
-      dias.push({
-        dia: i,
-        dataStr: dataFormatada
-      });
-    }
-
-    return dias;
-  }, [mesAtual]);
-
-  const datasComPresenca = useMemo(() => {
-    if (!alunoSelecionadoId) return new Set();
-    return new Set(
-      frequencias
-        .filter(f => String(f.aluno_id) === String(alunoSelecionadoId))
-        .map(f => f.data)
-    );
-  }, [frequencias, alunoSelecionadoId]);
-
   const metricas = useMemo(() => {
     const totalUsuarios = alunos.length;
     const usuariosAtraso = alunos.filter((a) => a.status_pagamento !== 'Em Dia').length;
@@ -293,6 +191,60 @@ export default function Home() {
 
     return { totalUsuarios, usuariosAtraso, totalRecebido, totalLucro: totalRecebido, valoresAReceber };
   }, [alunos]);
+
+  // Funções de Download de Relatórios
+  function baixarRelatorioFinanceiroTXT() {
+    const conteudo = `========================================\n` +
+      `       FITGESTÃO - RELATÓRIO FINANCEIRO\n` +
+      `========================================\n` +
+      `Data de Emissão: ${new Date().toLocaleDateString('pt-BR')}\n\n` +
+      `RESUMO ATUAL:\n` +
+      `- Entradas Efetivas (Recebido): R$ ${analiseFinanceira.receitaEfetivaMes.toFixed(2)}\n` +
+      `- Inadimplência / Pendente: R$ ${analiseFinanceira.inadimplenciaMes.toFixed(2)}\n` +
+      `- Faturamento Potencial Total: R$ ${analiseFinanceira.potencialTotal.toFixed(2)}\n\n` +
+      `PROJEÇÕES FUTURAS:\n` +
+      `- Mês Seguinte (+5%): R$ ${analiseFinanceira.projecaoMes1.toFixed(2)}\n` +
+      `- Daqui a 2 Meses (+8%): R$ ${analiseFinanceira.projecaoMes2.toFixed(2)}\n` +
+      `- Daqui a 3 Meses (+12%): R$ ${analiseFinanceira.projecaoMes3.toFixed(2)}\n` +
+      `========================================\n`;
+
+    const blob = new Blob([conteudo], { type: 'text/plain;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `relatorio_financeiro_${new Date().toISOString().split('T')[0]}.txt`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+
+  function baixarRelatorioAlunosTXT() {
+    let conteudo = `========================================\n` +
+      `        FITGESTÃO - RELATÓRIO DE ALUNOS\n` +
+      `========================================\n` +
+      `Data de Emissão: ${new Date().toLocaleDateString('pt-BR')}\n` +
+      `Total de Alunos: ${alunos.length}\n\n` +
+      `----------------------------------------\n`;
+
+    alunos.forEach((aluno, index) => {
+      conteudo += `${index + 1}. Nome: ${aluno.nome}\n` +
+        `   Telefone: ${aluno.telefone || 'Não informado'}\n` +
+        `   Plano: ${aluno.plano_nome || 'Plano Mensal'}\n` +
+        `   Valor Mensal: R$ ${Number(aluno.valor_mensalidade || 0).toFixed(2)}\n` +
+        `   Status Pagamento: ${aluno.status_pagamento}\n` +
+        `   Tempo Restante: ${calcularDiasRestantes(aluno)}\n` +
+        `----------------------------------------\n`;
+    });
+
+    const blob = new Blob([conteudo], { type: 'text/plain;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `relatorio_alunos_${new Date().toISOString().split('T')[0]}.txt`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
 
   async function handleAuth(e: React.FormEvent) {
     e.preventDefault();
@@ -485,6 +437,87 @@ export default function Home() {
                 <h2 style={{ fontSize: '2rem', margin: '0.5rem 0', color: '#ff5c5c' }}>{metricas.usuariosAtraso}</h2>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* MÓDULO RELATÓRIOS */}
+        {abaAtiva === 'Relatorios' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            
+            <div style={{ backgroundColor: '#1e2230', padding: '1.5rem', borderRadius: '12px', border: '1px solid #2a2f42', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.3rem' }}>Central de Relatórios</h3>
+                <p style={{ color: '#8a8f9d', fontSize: '0.85rem', marginTop: '0.3rem' }}>Visualize e descarregue relatórios consolidados da gestão.</p>
+              </div>
+
+              <div style={{ display: 'flex', gap: '1rem' }}>
+                <button
+                  onClick={baixarRelatorioFinanceiroTXT}
+                  style={{ padding: '0.6rem 1.2rem', borderRadius: '6px', border: 'none', backgroundColor: '#22c55e', color: '#fff', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.85rem' }}
+                >
+                  📥 Baixar Relatório Financeiro (.txt)
+                </button>
+                <button
+                  onClick={baixarRelatorioAlunosTXT}
+                  style={{ padding: '0.6rem 1.2rem', borderRadius: '6px', border: 'none', backgroundColor: '#3b82f6', color: '#fff', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.85rem' }}
+                >
+                  📥 Baixar Relatório de Alunos (.txt)
+                </button>
+              </div>
+            </div>
+
+            {/* Visualização Financeira Completa em Relatórios */}
+            <div style={{ backgroundColor: '#1e2230', padding: '1.5rem', borderRadius: '12px', border: '1px solid #2a2f42' }}>
+              <h3 style={{ margin: '0 0 1rem 0', color: '#635bfc' }}>📊 Visão Geral Financeira Atual</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
+                <div style={{ backgroundColor: '#13151f', padding: '1rem', borderRadius: '8px', border: '1px solid #2a2f42' }}>
+                  <span style={{ color: '#8a8f9d', fontSize: '0.8rem' }}>Receita Efetiva</span>
+                  <h3 style={{ color: '#22c55e', margin: '0.3rem 0' }}>R$ {analiseFinanceira.receitaEfetivaMes.toFixed(2)}</h3>
+                </div>
+                <div style={{ backgroundColor: '#13151f', padding: '1rem', borderRadius: '8px', border: '1px solid #2a2f42' }}>
+                  <span style={{ color: '#8a8f9d', fontSize: '0.8rem' }}>Inadimplência</span>
+                  <h3 style={{ color: '#ef4444', margin: '0.3rem 0' }}>R$ {analiseFinanceira.inadimplenciaMes.toFixed(2)}</h3>
+                </div>
+                <div style={{ backgroundColor: '#13151f', padding: '1rem', borderRadius: '8px', border: '1px solid #2a2f42' }}>
+                  <span style={{ color: '#8a8f9d', fontSize: '0.8rem' }}>Faturamento Potencial</span>
+                  <h3 style={{ color: '#3b82f6', margin: '0.3rem 0' }}>R$ {analiseFinanceira.potencialTotal.toFixed(2)}</h3>
+                </div>
+              </div>
+            </div>
+
+            {/* Relatório de Alunos Completo */}
+            <div style={{ backgroundColor: '#1e2230', padding: '1.5rem', borderRadius: '12px', border: '1px solid #2a2f42' }}>
+              <h3 style={{ margin: '0 0 1rem 0', color: '#635bfc' }}>👥 Relatório Consolidado de Alunos</h3>
+              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid #2a2f42', color: '#8a8f9d' }}>
+                    <th style={{ padding: '0.8rem' }}>NOME</th>
+                    <th style={{ padding: '0.8rem' }}>TELEFONE</th>
+                    <th style={{ padding: '0.8rem' }}>PLANO</th>
+                    <th style={{ padding: '0.8rem' }}>VALOR</th>
+                    <th style={{ padding: '0.8rem' }}>PAGAMENTO</th>
+                    <th style={{ padding: '0.8rem' }}>TEMPO RESTANTE</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {alunos.map((aluno) => (
+                    <tr key={aluno.id} style={{ borderBottom: '1px solid #1a1d2b' }}>
+                      <td style={{ padding: '0.8rem', fontWeight: 'bold' }}>{aluno.nome}</td>
+                      <td style={{ padding: '0.8rem', color: '#8a8f9d' }}>{aluno.telefone || 'Não informado'}</td>
+                      <td style={{ padding: '0.8rem' }}>{aluno.plano_nome || 'Plano Mensal'}</td>
+                      <td style={{ padding: '0.8rem' }}>R$ {Number(aluno.valor_mensalidade || 0).toFixed(2)}</td>
+                      <td style={{ padding: '0.8rem' }}>
+                        <span style={{ padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold', backgroundColor: aluno.status_pagamento === 'Em Dia' ? '#166534' : '#991b1b', color: '#fff' }}>
+                          {aluno.status_pagamento}
+                        </span>
+                      </td>
+                      <td style={{ padding: '0.8rem', color: '#34d399', fontWeight: 'bold' }}>{calcularDiasRestantes(aluno)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
           </div>
         )}
 
@@ -856,7 +889,7 @@ export default function Home() {
           </div>
         )}
 
-        {abaAtiva !== 'Painel' && abaAtiva !== 'Planos' && abaAtiva !== 'Frequência' && abaAtiva !== 'Usuarios' && abaAtiva !== 'Financeiro' && (
+        {abaAtiva !== 'Painel' && abaAtiva !== 'Planos' && abaAtiva !== 'Frequência' && abaAtiva !== 'Usuarios' && abaAtiva !== 'Financeiro' && abaAtiva !== 'Relatorios' && (
           <div style={{ backgroundColor: '#1e2230', padding: '3rem', borderRadius: '12px', border: '1px solid #2a2f42', textAlign: 'center' }}>
             <h2>Módulo de {abaAtiva}</h2>
             <p style={{ color: '#8a8f9d', marginTop: '0.5rem' }}>Esta secção está pronta para ser conectada às tabelas de {abaAtiva.toLowerCase()} do Supabase.</p>
