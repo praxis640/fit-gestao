@@ -242,55 +242,66 @@ export default function Home() {
     );
   }
 
+  // Mapeamento idêntico de itens do menu lateral com ícones e setas
+  const menuItens = [
+    { nome: 'Painel', icone: '🏠', temSeta: false },
+    { nome: 'Usuarios', icone: '👤', temSeta: false },
+    { nome: 'Planos', icone: '🎟️', temSeta: false },
+    { nome: 'Frequência', icone: '📅', temSeta: false },
+    { nome: 'Exercicios', icone: '🏋️', temSeta: true },
+    { nome: 'Treinos', icone: '🏃', temSeta: true },
+    { nome: 'Nutrição', icone: '🥣', temSeta: true },
+    { nome: 'Vendas', icone: '🛍️', temSeta: true },
+    { nome: 'Financeiro', icone: '💵', temSeta: true },
+    { nome: 'Relatorios', icone: '📋', temSeta: false },
+    { nome: 'Configurações', icone: '⚙️', temSeta: false },
+  ];
+
   return (
     <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: '#13151f', color: '#fff', fontFamily: 'sans-serif' }}>
-      {/* Sidebar */}
-      <aside style={{ width: '240px', backgroundColor: '#1a1d2b', borderRight: '1px solid #24283b', padding: '1.5rem 1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-        <h2 style={{ color: '#fff', fontSize: '1.4rem', marginBottom: '1.5rem', paddingLeft: '0.5rem' }}>FitGestão</h2>
+      
+      {/* Sidebar Lateral com os nomes exatos da imagem */}
+      <aside style={{ width: '220px', backgroundColor: '#1a1d2b', borderRight: '1px solid #24283b', padding: '1.2rem 0.8rem', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+        <h2 style={{ color: '#fff', fontSize: '1.3rem', marginBottom: '1.2rem', paddingLeft: '0.8rem' }}>FitGestão</h2>
         
-        {[
-          { nome: 'Painel', icone: '📊' },
-          { nome: 'Usuários', icone: '👥' },
-          { nome: 'Planos', icone: '📋' },
-          { nome: 'Frequência', icone: '📅' },
-          { nome: 'Exercícios', icone: '🏋️' },
-          { nome: 'Treinos', icone: '📝' },
-          { nome: 'Nutrição', icone: '🥗' },
-          { nome: 'Vendas', icone: '🛍️' },
-          { nome: 'Financeiro', icone: '💰' },
-          { nome: 'Relatórios', icone: '📈' },
-          { nome: 'Configurações', icone: '⚙️' },
-        ].map((item) => (
-          <button
-            key={item.nome}
-            onClick={() => setAbaAtiva(item.nome)}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.8rem',
-              padding: '0.75rem 1rem',
-              borderRadius: '8px',
-              border: 'none',
-              backgroundColor: abaAtiva === item.nome ? '#635bfc' : 'transparent',
-              color: abaAtiva === item.nome ? '#fff' : '#8a8f9d',
-              fontWeight: abaAtiva === item.nome ? 'bold' : 'normal',
-              cursor: 'pointer',
-              textAlign: 'left'
-            }}
-          >
-            <span>{item.icone}</span>
-            <span>{item.nome}</span>
-          </button>
-        ))}
+        {menuItens.map((item) => {
+          const estaAtivo = abaAtiva === item.nome;
+          return (
+            <button
+              key={item.nome}
+              onClick={() => setAbaAtiva(item.nome)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justify: 'space-between',
+                padding: '0.65rem 0.9rem',
+                borderRadius: '8px',
+                border: 'none',
+                backgroundColor: estaAtivo ? '#635bfc' : 'transparent',
+                color: estaAtivo ? '#fff' : '#8a8f9d',
+                fontWeight: estaAtivo ? 'bold' : 'normal',
+                fontSize: '0.9rem',
+                cursor: 'pointer',
+                textAlign: 'left'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.7rem' }}>
+                <span style={{ fontSize: '1rem' }}>{item.icone}</span>
+                <span>{item.nome}</span>
+              </div>
+              {item.temSeta && <span style={{ fontSize: '0.8rem', color: '#52586d' }}>›</span>}
+            </button>
+          );
+        })}
 
         <div style={{ marginTop: 'auto', paddingTop: '1rem', borderTop: '1px solid #24283b' }}>
-          <button onClick={() => supabase.auth.signOut()} style={{ width: '100%', padding: '0.6rem', borderRadius: '6px', border: '1px solid #3a3f55', backgroundColor: 'transparent', color: '#ff5c5c', cursor: 'pointer' }}>
+          <button onClick={() => supabase.auth.signOut()} style={{ width: '100%', padding: '0.6rem', borderRadius: '6px', border: '1px solid #3a3f55', backgroundColor: 'transparent', color: '#ff5c5c', cursor: 'pointer', fontSize: '0.85rem' }}>
             Sair
           </button>
         </div>
       </aside>
 
-      {/* Principal */}
+      {/* Conteúdo Principal */}
       <main style={{ flex: 1, padding: '2rem', overflowY: 'auto' }}>
         
         {/* Painel */}
@@ -319,10 +330,9 @@ export default function Home() {
           </div>
         )}
 
-        {/* Frequência */}
+        {/* Frequência com Calendário */}
         {abaAtiva === 'Frequência' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-            
             <div style={{ backgroundColor: '#1e2230', padding: '1.5rem', borderRadius: '12px', border: '1px solid #2a2f42', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
               <div>
                 <h3 style={{ margin: 0 }}>Controlo de Frequência</h3>
@@ -408,12 +418,11 @@ export default function Home() {
                 })}
               </div>
             </div>
-
           </div>
         )}
 
-        {/* Usuários */}
-        {abaAtiva === 'Usuários' && (
+        {/* Usuarios */}
+        {abaAtiva === 'Usuarios' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
             <div style={{ backgroundColor: '#1e2230', padding: '1.5rem', borderRadius: '12px', border: '1px solid #2a2f42' }}>
               <h3 style={{ margin: '0 0 1rem 0' }}>Cadastrar Novo Aluno</h3>
@@ -475,6 +484,14 @@ export default function Home() {
                 </tbody>
               </table>
             </div>
+          </div>
+        )}
+
+        {/* Mensagem Padrão para Outras Abas */}
+        {abaAtiva !== 'Painel' && abaAtiva !== 'Frequência' && abaAtiva !== 'Usuarios' && (
+          <div style={{ backgroundColor: '#1e2230', padding: '3rem', borderRadius: '12px', border: '1px solid #2a2f42', textAlign: 'center' }}>
+            <h2>Módulo de {abaAtiva}</h2>
+            <p style={{ color: '#8a8f9d', marginTop: '0.5rem' }}>Esta secção está pronta para ser conectada às tabelas de {abaAtiva.toLowerCase()} do Supabase.</p>
           </div>
         )}
 
