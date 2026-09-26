@@ -19,8 +19,78 @@
   }
 }
 
+html,
+body {
+  min-height: 100%;
+  width: 100%;
+  margin: 0;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+.fit-shell { display: flex; min-height: 100dvh; width: 100%; }
+.fit-sidebar { width: 220px; flex: 0 0 220px; display: flex; flex-direction: column; min-height: 100dvh; }
+.fit-sidebar-top { display: contents; }
+.fit-brand { min-width: 0; }
+.fit-nav { display: flex; flex-direction: column; gap: 0.4rem; }
+.fit-sidebar-footer { margin-top: auto; }
+.fit-signout-mobile { display: none; }
+.fit-main { flex: 1 1 auto; width: calc(100% - 220px); min-width: 0; padding: 2rem; overflow-x: hidden; }
+.fit-main > *, .fit-main section, .fit-main form { min-width: 0; }
+.fit-dashboard-grid { min-width: 0; }
+.fit-sales-forms { min-width: 0; }
+.fit-main button, .fit-main input, .fit-main select, .fit-main textarea { max-width: 100%; }
+.fit-main table { max-width: 100%; }
+
+.aluno-form { display: grid; gap: 1.3rem; }
+.aluno-form-section { padding: 1rem; border: 1px solid #2a2f42; border-radius: 10px; }
+.aluno-form-section h4 { margin: 0 0 1rem; font-size: 0.95rem; color: #d3d6e1; }
+.aluno-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(205px, 1fr)); gap: 1rem; align-items: start; }
+.aluno-field { display: flex; flex-direction: column; gap: 0.4rem; color: #b4bac9; font-size: 0.85rem; min-width: 0; }
+.aluno-field small { color: #86efac; }
+.aluno-control { width: 100%; min-height: 42px; padding: 0.6rem; border-radius: 6px; border: 1px solid #3a3f55; background-color: #13151f; color: #fff; }
+.aluno-control:focus-visible, .aluno-submit:focus-visible { outline: 2px solid #a9a4ff; outline-offset: 2px; }
+.aluno-submit { padding: 0.85rem 1.5rem; border-radius: 6px; border: none; color: #fff; font-weight: bold; cursor: pointer; }
+.aluno-submit:disabled { cursor: wait; opacity: 0.65; }
+.aluno-table { min-width: 1080px; }
+.aluno-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(165px, 1fr)); gap: 0.8rem; }
+.aluno-kpis > div { display: flex; flex-direction: column; gap: 0.4rem; padding: 1rem; background: #1e2230; border: 1px solid #2a2f42; border-radius: 10px; }
+.aluno-kpis small { color: #aeb5c6; }
+.aluno-kpis strong { font-size: 1.5rem; }
+
+@media (max-width: 800px) {
+  .fit-shell { flex-direction: column; min-height: 100dvh; }
+  .fit-sidebar {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    width: 100%;
+    min-height: 0;
+    flex: 0 0 auto;
+    display: block;
+    overflow: hidden;
+    padding: 0.65rem 0.75rem 0 !important;
+    border-right: 0 !important;
+    border-bottom: 1px solid #2a2f42;
+  }
+  .fit-sidebar-top { display: flex; align-items: center; justify-content: space-between; gap: 0.8rem; }
+  .fit-sidebar h2.fit-brand { margin: 0 !important; padding: 0 !important; font-size: 1.05rem !important; line-height: 1.25; }
+  .fit-signout-mobile {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 38px;
+    padding: 0.4rem 0.75rem;
+    border: 1px solid #3a3f55;
+    border-radius: 7px;
+    background: transparent;
+    color: #ff7777;
+    font: inherit;
+    cursor: pointer;
+  }
+  .fit-nav {
+    flex-direction: row;
