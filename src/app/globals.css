@@ -94,3 +94,51 @@ body {
   }
   .fit-nav {
     flex-direction: row;
+    align-items: center;
+    gap: 0.35rem;
+    margin: 0.6rem -0.75rem 0;
+    padding: 0 0.75rem 0.65rem;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
+    -webkit-overflow-scrolling: touch;
+  }
+  .fit-nav > button {
+    flex: 0 0 auto;
+    width: auto !important;
+    min-height: 42px;
+    padding: 0.55rem 0.75rem !important;
+    white-space: nowrap;
+  }
+  .fit-sidebar-footer { display: none; }
+  .fit-main { width: 100%; padding: 1rem; overflow-x: hidden; }
+  .fit-main > div { min-width: 0; }
+  .fit-main [style*="minmax(280px"],
+  .fit-main [style*="minmax(300px"] { grid-template-columns: minmax(0, 1fr) !important; }
+  .fit-dashboard-grid { grid-template-columns: minmax(0, 1fr) !important; }
+  .fit-sales-fields { grid-template-columns: minmax(0, 1fr) !important; }
+  .fit-month-nav {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem !important;
+  }
+  .fit-month-nav > :nth-child(2) { grid-column: 1 / -1; grid-row: 1; }
+  .fit-month-nav > button { width: 100%; min-height: 42px; padding-inline: 0.5rem !important; }
+  .fit-month-nav > span, .fit-month-nav > h3 { min-width: 0 !important; text-align: center; }
+  .fit-main > div > div[style*="grid-template-columns: repeat(7"] { gap: 0.25rem !important; }
+  .fit-main table { display: block; width: 100%; overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; }
+  .aluno-form-section { padding: 0.8rem; }
+  .aluno-form-grid { grid-template-columns: minmax(0, 1fr); }
+  .aluno-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .aluno-kpis > div:last-child:nth-child(odd) { grid-column: 1 / -1; }
+}
+
+@media (max-width: 480px) {
+  .fit-main { padding: 0.75rem; }
+  .fit-main section[style*="padding: 1.5rem"],
+  .fit-main > div > div[style*="padding: 1.5rem"] { padding: 1rem !important; }
+  .aluno-kpis { grid-template-columns: minmax(0, 1fr); }
+  .aluno-kpis > div:last-child:nth-child(odd) { grid-column: auto; }
+  .fit-main button { min-height: 40px; }
+  .fit-main input, .fit-main select, .fit-main textarea { min-width: 0; font-size: 16px; }
+}
