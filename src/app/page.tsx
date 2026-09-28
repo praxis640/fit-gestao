@@ -283,17 +283,21 @@ export default function Home() {
 
   const metricas = useMemo(() => {
     const totalUsuarios = alunos.length;
+    const alunosAtivos = alunos.filter((a) => a.status === 'Ativo');
     const usuariosAtraso = alunos.filter((a) => a.status === 'Ativo' && situacaoPagamento(a, pagosNoMes, hoje) === 'Atrasado').length;
-    const totalRecebido = pagamentos
+    const receitaMensalidadesMes = pagamentos
       .filter((p) => p.competencia.startsWith(mesAtualChave))
-      .reduce((acc, curr) => acc + Number(curr.valor), 0) + vendasFinanceiras
+      .reduce((acc, curr) => acc + Number(curr.valor), 0);
+    const receitaVendasMes = vendasFinanceiras
       .filter((venda) => venda.data_venda.startsWith(mesAtualChave))
       .reduce((acc, venda) => acc + Number(venda.valor_total), 0);
+    const totalRecebido = receitaMensalidadesMes + receitaVendasMes;
     const valoresAReceber = alunos
       .filter((a) => a.status === 'Ativo' && situacaoPagamento(a, pagosNoMes, hoje) !== 'Em Dia')
       .reduce((acc, curr) => acc + (Number(curr.valor_mensalidade) || 0), 0);
+    const alunosAdimplentes = alunosAtivos.filter((a) => situacaoPagamento(a, pagosNoMes, hoje) === 'Em Dia').length;
 
-    return { totalUsuarios, usuariosAtraso, totalRecebido, valoresAReceber };
+    return { totalUsuarios, alunosAtivos: alunosAtivos.length, usuariosAtraso, totalRecebido, receitaMensalidadesMes, receitaVendasMes, valoresAReceber, alunosAdimplentes };
   }, [alunos, pagamentos, vendasFinanceiras, pagosNoMes, hoje, mesAtualChave]);
 
   const alunosFiltrados = useMemo(() => {
@@ -321,6 +325,13 @@ export default function Home() {
     aluno.status === 'Ativo' && aluno.data_nascimento?.slice(5, 7) === hoje.slice(5, 7)
   ).length;
   const ativos = alunos.filter((aluno) => aluno.status === 'Ativo').length;
+  const presencasHoje = useMemo(() => new Set(
+    frequencias.filter((frequencia) => frequencia.data?.slice(0, 10) === hoje).map((frequencia) => String(frequencia.aluno_id))
+  ).size, [frequencias, hoje]);
+  const novosAlunosNoMes = useMemo(() => alunos.filter((aluno) => aluno.criado_em?.slice(0, 7) === mesAtualChave).length, [alunos, mesAtualChave]);
+  const percentualAdimplencia = metricas.alunosAtivos > 0 ? Math.round(metricas.alunosAdimplentes / metricas.alunosAtivos * 100) : 0;
+  const percentualMensalidadesRecebidas = analiseFinanceira.potencialTotal > 0
+    ? Math.min(100, Math.round(metricas.receitaMensalidadesMes / analiseFinanceira.potencialTotal * 100)) : 0;
   const prazosDosPlanos = alunos.filter(aluno => aluno.status === 'Ativo').map(aluno => {
     const vencimento = vencimentoPlano(aluno, planos, hoje);
     return { aluno, vencimento, dias: diasAteVencimento(vencimento, hoje) };
@@ -729,52 +740,63 @@ export default function Home() {
         )}
         
         {!erroDados && abaAtiva === 'Painel' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '1.5rem' }}>
-              <div style={{ backgroundColor: '#1e2230', padding: '1.5rem', borderRadius: '12px', border: '1px solid #2a2f42', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <h3 style={{ margin: 0, fontSize: '1.2rem' }}>Bem Vindo Admin Principal! 🎉</h3>
-                  <p style={{ color: '#8a8f9d', fontSize: '0.85rem', margin: '0.4rem 0 1rem 0' }}>Recebido no mês em pagamentos e vendas</p>
-                  <h2 style={{ margin: 0, fontSize: '1.8rem', color: '#fff' }}>R$ {metricas.totalRecebido.toFixed(2)}</h2>
+          <div className="dashboard-page">
+            <header className="dashboard-header">
+              <div>
+                <span className="dashboard-eyebrow">RESUMO DA ACADEMIA</span>
+                <h2>Olá! Aqui está a situação da {nomeAcademia}.</h2>
+                <p>{new Date(`${hoje}T12:00:00`).toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} · Visão do mês atual</p>
+              </div>
+              <div className="dashboard-quick-actions">
+                <button type="button" onClick={() => setAbaAtiva('Usuarios')}>＋ Novo aluno</button>
+                <button type="button" onClick={() => setAbaAtiva('Frequência')}>✓ Registrar presença</button>
+              </div>
+            </header>
+
+            <section className="dashboard-kpis" aria-label="Indicadores rápidos da academia">
+              <button type="button" className="dashboard-kpi" onClick={() => { setFiltroSituacao('Ativo'); setAbaAtiva('Usuarios'); }}>
+                <span className="dashboard-kpi-icon">👥</span><span className="dashboard-kpi-label">Alunos ativos</span>
+                <strong>{metricas.alunosAtivos}</strong><small>{metricas.totalUsuarios - metricas.alunosAtivos} inativos · {novosAlunosNoMes} novos neste mês</small>
+              </button>
+              <button type="button" className="dashboard-kpi" onClick={() => setAbaAtiva('Frequência')}>
+                <span className="dashboard-kpi-icon">📍</span><span className="dashboard-kpi-label">Presenças hoje</span>
+                <strong>{presencasHoje}</strong><small>{ativos ? `${Math.round(presencasHoje / ativos * 100)}% dos alunos ativos` : 'Nenhum aluno ativo cadastrado'}</small>
+              </button>
+              <button type="button" className="dashboard-kpi" onClick={() => { setFiltroSituacao('Todos'); setAbaAtiva('Usuarios'); }}>
+                <span className="dashboard-kpi-icon">✅</span><span className="dashboard-kpi-label">Adimplência do mês</span>
+                <strong>{percentualAdimplencia}%</strong><small>{metricas.alunosAdimplentes} de {metricas.alunosAtivos} alunos ativos em dia</small>
+              </button>
+              <button type="button" className="dashboard-kpi dashboard-kpi-alert" onClick={() => setAbaAtiva('Usuarios')}>
+                <span className="dashboard-kpi-icon">⚠️</span><span className="dashboard-kpi-label">Planos vencidos</span>
+                <strong>{planosVencidos.length}</strong><small>{planosVencendo.length} vencem nos próximos 7 dias</small>
+              </button>
+            </section>
+
+            <section className="dashboard-main-grid">
+              <article className="dashboard-card dashboard-finance-card">
+                <div className="dashboard-card-heading"><div><span className="dashboard-eyebrow">FINANCEIRO · {new Date(`${mesAtualChave}-15T12:00:00`).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }).toUpperCase()}</span><h3>Receita recebida</h3></div><button type="button" onClick={() => setAbaAtiva('Financeiro')}>Abrir financeiro →</button></div>
+                <strong className="dashboard-revenue">{metricas.totalRecebido.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
+                <div className="dashboard-revenue-split"><span>Mensalidades <b>{metricas.receitaMensalidadesMes.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</b></span><span>Vendas <b>{metricas.receitaVendasMes.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</b></span></div>
+                <div className="dashboard-progress-label"><span>Mensalidades recebidas</span><b>{percentualMensalidadesRecebidas}% do potencial</b></div>
+                <div className="dashboard-progress-track"><i style={{ width: `${percentualMensalidadesRecebidas}%` }} /></div>
+                <div className="dashboard-finance-foot"><span>Potencial mensal: <b>{analiseFinanceira.potencialTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</b></span><span>A receber: <b>{metricas.valoresAReceber.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</b></span></div>
+              </article>
+
+              <article className="dashboard-card dashboard-attention-card">
+                <div className="dashboard-card-heading"><div><span className="dashboard-eyebrow">ACOMPANHAMENTO</span><h3>Planos que pedem atenção</h3></div><button type="button" onClick={() => setAbaAtiva('Usuarios')}>Ver alunos →</button></div>
+                <div className="dashboard-plan-summary"><span className={planosVencidos.length ? 'dashboard-status-bad' : 'dashboard-status-good'}>{planosVencidos.length} vencidos</span><span className={planosVencendo.length ? 'dashboard-status-warn' : 'dashboard-status-good'}>{planosVencendo.length} vencendo em 7 dias</span></div>
+                <div className="dashboard-plan-lists">
+                  <div><h4>Vencidos</h4>{planosVencidos.length ? planosVencidos.slice(0, 3).map(({ aluno, vencimento }) => <button type="button" className="dashboard-plan-row" key={`vencido-${aluno.id}`} onClick={() => { setAlunoPerfilId(String(aluno.id)); setAbaAtiva('Usuarios'); }}><span>{aluno.nome}<small>Venceu em {formatarDataBrasil(vencimento)}</small></span><b>Ver</b></button>) : <p className="dashboard-empty">Nenhum plano vencido.</p>}</div>
+                  <div><h4>Próximos 7 dias</h4>{planosVencendo.length ? planosVencendo.slice(0, 3).map(({ aluno, vencimento, dias }) => <button type="button" className="dashboard-plan-row" key={`vencendo-${aluno.id}`} onClick={() => { setAlunoPerfilId(String(aluno.id)); setAbaAtiva('Usuarios'); }}><span>{aluno.nome}<small>{dias === 0 ? 'Vence hoje' : `Vence em ${formatarDataBrasil(vencimento)}`}</small></span><b>Ver</b></button>) : <p className="dashboard-empty">Nenhum vencimento próximo.</p>}</div>
                 </div>
-                <div style={{ fontSize: '4rem' }}>🧑‍💻</div>
-              </div>
+              </article>
+            </section>
 
-              <div style={{ backgroundColor: '#1e2230', padding: '1.5rem', borderRadius: '12px', border: '1px solid #2a2f42' }}>
-                <span style={{ color: '#8a8f9d', fontSize: '0.85rem' }}>👥 Total de alunos</span>
-                <h2 style={{ fontSize: '2rem', margin: '0.5rem 0' }}>{metricas.totalUsuarios}</h2>
-              </div>
-
-              <div style={{ backgroundColor: '#1e2230', padding: '1.5rem', borderRadius: '12px', border: '1px solid #2a2f42' }}>
-                <span style={{ color: '#8a8f9d', fontSize: '0.85rem' }}>🛑 Alunos em atraso</span>
-                <h2 style={{ fontSize: '2rem', margin: '0.5rem 0', color: '#ff5c5c' }}>{metricas.usuariosAtraso}</h2>
-              </div>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.5rem' }}>
-              {[
-                { titulo: '⏳ Planos vencendo em 7 dias', itens: planosVencendo, cor: '#fbbf24', vazio: 'Nenhum plano próximo do vencimento.' },
-                { titulo: '🛑 Planos vencidos', itens: planosVencidos, cor: '#ff5c5c', vazio: 'Nenhum plano vencido.' }
-              ].map(grupo => (
-                <section key={grupo.titulo} style={{ backgroundColor: '#1e2230', padding: '1.5rem', borderRadius: '12px', border: '1px solid #2a2f42' }}>
-                  <h3 style={{ margin: '0 0 0.5rem', color: grupo.cor }}>{grupo.titulo} ({grupo.itens.length})</h3>
-                  <p style={{ margin: '0 0 1rem', fontSize: '0.8rem', color: '#8a8f9d' }}>Alunos com matrícula ativa · validade do plano</p>
-                  {grupo.itens.length === 0 ? <p style={{ color: '#aeb4c5', margin: 0 }}>{grupo.vazio}</p> : (
-                    <ul style={{ listStyle: 'none', margin: 0, padding: 0, maxHeight: '320px', overflowY: 'auto' }}>
-                      {grupo.itens.map(({ aluno, vencimento, dias }) => (
-                        <li key={String(aluno.id)} style={{ borderTop: '1px solid #33384b', padding: '0.8rem 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem' }}>
-                          <div><strong>{aluno.nome}</strong><div style={{ color: '#aeb4c5', fontSize: '0.8rem', marginTop: '0.25rem' }}>
-                            {dias < 0 ? `Venceu em ${formatarDataBrasil(vencimento)}` : dias === 0 ? 'Vence hoje' : `Vence em ${formatarDataBrasil(vencimento)} (${dias} dias)`}
-                          </div></div>
-                          <button type="button" onClick={() => { setAlunoPerfilId(String(aluno.id)); setAbaAtiva('Usuarios'); }} style={{ backgroundColor: '#3a3f55', color: '#fff', border: 0, borderRadius: '6px', padding: '0.45rem 0.7rem', cursor: 'pointer', flexShrink: 0 }}>
-                            Ver aluno
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </section>
-              ))}
-            </div>
+            <section className="dashboard-shortcuts" aria-label="Atalhos">
+              <button type="button" onClick={() => setAbaAtiva('Usuarios')}><span>👤</span><div><b>Alunos</b><small>Cadastre e acompanhe matrículas</small></div><strong>→</strong></button>
+              <button type="button" onClick={() => setAbaAtiva('Frequência')}><span>📅</span><div><b>Frequência</b><small>Consulte e registre presenças</small></div><strong>→</strong></button>
+              <button type="button" onClick={() => setAbaAtiva('Vendas')}><span>🛍️</span><div><b>Vendas</b><small>Produtos e compras vinculadas</small></div><strong>→</strong></button>
+            </section>
           </div>
         )}
 
