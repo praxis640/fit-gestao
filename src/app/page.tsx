@@ -643,13 +643,18 @@ export default function Home() {
     <div className="fit-shell" style={{ minHeight: '100vh', backgroundColor: '#13151f', color: '#fff', fontFamily: 'sans-serif' }}>
       
       <aside className="fit-sidebar" style={{ backgroundColor: '#1a1d2b', borderRight: '1px solid #24283b', padding: '1.2rem 0.8rem', gap: '0.4rem' }}>
-        <h2 style={{ color: '#fff', fontSize: '1.3rem', marginBottom: '1.2rem', paddingLeft: '0.8rem', overflowWrap: 'anywhere' }}>{nomeAcademia}</h2>
+        <div className="fit-sidebar-top">
+          <h2 className="fit-brand" style={{ color: '#fff', fontSize: '1.3rem', marginBottom: '1.2rem', paddingLeft: '0.8rem', overflowWrap: 'anywhere' }}>{nomeAcademia}</h2>
+          <button type="button" className="fit-signout-mobile" onClick={() => supabase.auth.signOut()}>Sair</button>
+        </div>
         
+        <nav className="fit-nav" aria-label="Navegação principal">
         {menuItens.map((item) => {
           const estaAtivo = abaAtiva === item.nome;
           return (
             <button
               key={item.nome}
+              type="button"
               onClick={() => setAbaAtiva(item.nome)}
               style={{
                 display: 'flex',
@@ -674,9 +679,10 @@ export default function Home() {
             </button>
           );
         })}
+        </nav>
 
-        <div style={{ marginTop: 'auto', paddingTop: '1rem', borderTop: '1px solid #24283b' }}>
-          <button onClick={() => supabase.auth.signOut()} style={{ width: '100%', padding: '0.6rem', borderRadius: '6px', border: '1px solid #3a3f55', backgroundColor: 'transparent', color: '#ff5c5c', cursor: 'pointer', fontSize: '0.85rem' }}>
+        <div className="fit-sidebar-footer" style={{ marginTop: 'auto', paddingTop: '1rem', borderTop: '1px solid #24283b' }}>
+          <button type="button" onClick={() => supabase.auth.signOut()} style={{ width: '100%', padding: '0.6rem', borderRadius: '6px', border: '1px solid #3a3f55', backgroundColor: 'transparent', color: '#ff5c5c', cursor: 'pointer', fontSize: '0.85rem' }}>
             Sair
           </button>
         </div>
