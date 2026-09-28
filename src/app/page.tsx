@@ -8,6 +8,7 @@ import { Configuracoes, ModuloGestao, type TipoModulo } from './modulos';
 import { PlanosAlimentares } from './planos-alimentares';
 import { PerfilAluno } from './perfil-aluno';
 import { Vendas } from './vendas';
+import { Financeiro } from './financeiro';
 import { Session } from '@supabase/supabase-js';
 
 interface Aluno {
@@ -54,6 +55,8 @@ interface VendaFinanceira {
   id: string;
   valor_total: number;
   data_venda: string;
+  produto_nome?: string;
+  aluno_nome?: string;
 }
 
 export default function Home() {
@@ -203,7 +206,7 @@ export default function Home() {
       .eq('user_id', userId);
     const { data: dataVendas, error: vendasError } = await supabase
       .from('gestao_vendas')
-      .select('id, valor_total, data_venda')
+      .select('id, valor_total, data_venda, produto_nome, aluno_nome')
       .eq('user_id', userId);
     if (usuarioAtualRef.current !== userId) return;
     if (pagamentosError || erroPlanos) {
@@ -851,93 +854,17 @@ export default function Home() {
           </div>
         )}
 
-        {!erroDados && abaAtiva === 'Financeiro' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-            <div style={{ backgroundColor: '#1e2230', padding: '1.5rem', borderRadius: '12px', border: '1px solid #2a2f42', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
-              <div>
-                <h3 style={{ margin: 0, fontSize: '1.3rem' }}>Análise e Projeção Financeira</h3>
-                <p style={{ color: '#8a8f9d', fontSize: '0.85rem', marginTop: '0.3rem' }}>Pagamentos, vendas de produtos e situação atual dos alunos.</p>
-              </div>
-
-              <div style={{ display: 'flex', gap: '0.8rem', alignItems: 'center' }}>
-                <button
-                  onClick={() => setMesFinanceiro(new Date(mesFinanceiro.getFullYear(), mesFinanceiro.getMonth() - 1, 1))}
-                  style={{ padding: '0.5rem 0.9rem', backgroundColor: '#13151f', border: '1px solid #2a2f42', color: '#fff', borderRadius: '6px', cursor: 'pointer' }}
-                >
-                  ◀ Mês Anterior
-                </button>
-
-                <span style={{ fontWeight: 'bold', minWidth: '160px', textAlign: 'center', color: '#635bfc' }}>
-                  {mesFinanceiro.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }).toUpperCase()}
-                </span>
-
-                <button
-                  onClick={() => setMesFinanceiro(new Date(mesFinanceiro.getFullYear(), mesFinanceiro.getMonth() + 1, 1))}
-                  style={{ padding: '0.5rem 0.9rem', backgroundColor: '#13151f', border: '1px solid #2a2f42', color: '#fff', borderRadius: '6px', cursor: 'pointer' }}
-                >
-                  Próximo Mês ▶
-                </button>
-              </div>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1.5rem' }}>
-              <div style={{ backgroundColor: '#1e2230', padding: '1.5rem', borderRadius: '12px', border: '1px solid #2a2f42' }}>
-                <span style={{ color: '#8a8f9d', fontSize: '0.85rem' }}>💵 Entradas Efetivas (Recebido)</span>
-                <h2 style={{ fontSize: '1.8rem', margin: '0.5rem 0', color: '#22c55e' }}>R$ {analiseFinanceira.receitaEfetivaMes.toFixed(2)}</h2>
-                <span style={{ fontSize: '0.75rem', color: '#8a8f9d' }}>Mensalidades e vendas no mês selecionado</span>
-                {erroVendasFinanceiras && <p role="alert" style={{ color: '#fca5a5', fontSize: '0.75rem', marginBottom: 0 }}>{erroVendasFinanceiras}</p>}
-              </div>
-
-              <div style={{ backgroundColor: '#1e2230', padding: '1.5rem', borderRadius: '12px', border: '1px solid #2a2f42' }}>
-                <span style={{ color: '#8a8f9d', fontSize: '0.85rem' }}>🛍️ Vendas de produtos</span>
-                <h2 style={{ fontSize: '1.8rem', margin: '0.5rem 0', color: '#86efac' }}>R$ {analiseFinanceira.receitaVendasMes.toFixed(2)}</h2>
-                <span style={{ fontSize: '0.75rem', color: '#8a8f9d' }}>Vendas registradas no mês escolhido</span>
-              </div>
-
-              <div style={{ backgroundColor: '#1e2230', padding: '1.5rem', borderRadius: '12px', border: '1px solid #2a2f42' }}>
-                <span style={{ color: '#8a8f9d', fontSize: '0.85rem' }}>⚠️ Valores em atraso hoje</span>
-                <h2 style={{ fontSize: '1.8rem', margin: '0.5rem 0', color: '#ef4444' }}>R$ {analiseFinanceira.inadimplenciaMes.toFixed(2)}</h2>
-                <span style={{ fontSize: '0.75rem', color: '#8a8f9d' }}>Valores por regularizar</span>
-              </div>
-
-              <div style={{ backgroundColor: '#1e2230', padding: '1.5rem', borderRadius: '12px', border: '1px solid #2a2f42' }}>
-                <span style={{ color: '#8a8f9d', fontSize: '0.85rem' }}>📈 Potencial mensal atual</span>
-                <h2 style={{ fontSize: '1.8rem', margin: '0.5rem 0', color: '#3b82f6' }}>R$ {analiseFinanceira.potencialTotal.toFixed(2)}</h2>
-                <span style={{ fontSize: '0.75rem', color: '#8a8f9d' }}>Soma das mensalidades dos alunos ativos</span>
-              </div>
-            </div>
-
-            <div style={{ backgroundColor: '#1e2230', padding: '1.5rem', borderRadius: '12px', border: '1px solid #2a2f42' }}>
-              <h3 style={{ margin: '0 0 1rem 0' }}>🔮 Expectativa de Faturamento para os Próximos Meses</h3>
-              <p style={{ color: '#8a8f9d', fontSize: '0.85rem', marginBottom: '1.5rem' }}>Projeção baseada na retenção atual e contratos recorrentes de planos ativos.</p>
-
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.5rem' }}>
-                <div style={{ backgroundColor: '#13151f', padding: '1.2rem', borderRadius: '8px', border: '1px solid #2a2f42' }}>
-                  <span style={{ color: '#8a8f9d', fontSize: '0.85rem' }}>
-                    {new Date(mesFinanceiro.getFullYear(), mesFinanceiro.getMonth() + 1, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }).toUpperCase()}
-                  </span>
-                  <h3 style={{ color: '#22c55e', margin: '0.5rem 0 0 0', fontSize: '1.5rem' }}>R$ {analiseFinanceira.projecaoMes1.toFixed(2)}</h3>
-                  <span style={{ fontSize: '0.75rem', color: '#8a8f9d' }}>Estimativa +5% crescimento</span>
-                </div>
-
-                <div style={{ backgroundColor: '#13151f', padding: '1.2rem', borderRadius: '8px', border: '1px solid #2a2f42' }}>
-                  <span style={{ color: '#8a8f9d', fontSize: '0.85rem' }}>
-                    {new Date(mesFinanceiro.getFullYear(), mesFinanceiro.getMonth() + 2, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }).toUpperCase()}
-                  </span>
-                  <h3 style={{ color: '#22c55e', margin: '0.5rem 0 0 0', fontSize: '1.5rem' }}>R$ {analiseFinanceira.projecaoMes2.toFixed(2)}</h3>
-                  <span style={{ fontSize: '0.75rem', color: '#8a8f9d' }}>Estimativa +8% crescimento</span>
-                </div>
-
-                <div style={{ backgroundColor: '#13151f', padding: '1.2rem', borderRadius: '8px', border: '1px solid #2a2f42' }}>
-                  <span style={{ color: '#8a8f9d', fontSize: '0.85rem' }}>
-                    {new Date(mesFinanceiro.getFullYear(), mesFinanceiro.getMonth() + 3, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }).toUpperCase()}
-                  </span>
-                  <h3 style={{ color: '#22c55e', margin: '0.5rem 0 0 0', fontSize: '1.5rem' }}>R$ {analiseFinanceira.projecaoMes3.toFixed(2)}</h3>
-                  <span style={{ fontSize: '0.75rem', color: '#8a8f9d' }}>Estimativa +12% crescimento</span>
-                </div>
-              </div>
-            </div>
-          </div>
+        {!erroDados && abaAtiva === 'Financeiro' && session && (
+          <Financeiro
+            key={`${session.user.id}-financeiro`}
+            userId={session.user.id}
+            alunos={alunos}
+            pagamentos={pagamentos}
+            vendas={vendasFinanceiras}
+            erroVendas={erroVendasFinanceiras}
+            mes={mesFinanceiro}
+            onMesChange={setMesFinanceiro}
+          />
         )}
 
         {!erroDados && abaAtiva === 'Planos' && (

@@ -62,6 +62,57 @@ body {
 .aluno-kpis small { color: #aeb5c6; }
 .aluno-kpis strong { font-size: 1.5rem; }
 
+.fin-page { display: grid; gap: 1rem; min-width: 0; }
+.fin-header, .fin-month, .fin-list-header, .fin-form-row, .fin-actions, .fin-legend, .fin-potential { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
+.fin-month { flex-wrap: wrap; }
+.fin-month strong { color: #a9a4ff; text-align: center; min-width: 150px; }
+.fin-kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
+.fin-grid { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); gap: 1rem; align-items: start; }
+.fin-form { display: grid; gap: 0.8rem; }
+.fin-form-row > * { flex: 1 1 0; min-width: 0; }
+.fin-label { display: grid; gap: 0.35rem; color: #cbd5e1; font-size: 0.88rem; min-width: 0; }
+.fin-type { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+.fin-type button { min-height: 42px; border: 1px solid #3a3f55; border-radius: 7px; background: #13151f; color: #cbd5e1; cursor: pointer; font: inherit; }
+.fin-type .fin-type-active:first-child { color: #86efac; border-color: #16a34a; background: #123025; }
+.fin-type .fin-type-active:last-child { color: #fda4af; border-color: #e11d48; background: #351923; }
+.fin-alert, .fin-success, .fin-note { border-radius: 8px; padding: 0.8rem 1rem; margin: 0; }
+.fin-alert { color: #fecaca; background: #3f1d26; border: 1px solid #7f1d1d; overflow-wrap: anywhere; }
+.fin-success { color: #bbf7d0; background: #123025; border: 1px solid #166534; }
+.fin-note { color: #cbd5e1; background: #1e2230; border: 1px solid #2a2f42; font-size: 0.88rem; }
+.fin-chart { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); align-items: end; gap: 0.6rem; min-height: 160px; padding: 0.5rem 0 0; }
+.fin-chart-col { display: flex; flex-direction: column; align-items: center; gap: 0.45rem; color: #aeb5c6; text-transform: capitalize; }
+.fin-chart-bars { height: 125px; width: 100%; display: flex; align-items: end; justify-content: center; gap: 5px; border-bottom: 1px solid #3a3f55; }
+.fin-bar-in, .fin-bar-out { display: block; width: min(35%, 22px); min-height: 0; border-radius: 4px 4px 0 0; }
+.fin-bar-in { background: #22c55e; }
+.fin-bar-out { background: #fb7185; }
+.fin-legend { justify-content: center; margin-top: 0.6rem; color: #aeb5c6; font-size: 0.82rem; }
+.fin-legend span { display: flex; align-items: center; gap: 0.35rem; }
+.fin-legend i { width: 11px; height: 11px; border-radius: 3px; }
+.fin-category { display: grid; gap: 0.3rem; margin: 0.65rem 0; }
+.fin-category > div:first-child { display: flex; justify-content: space-between; gap: 0.5rem; font-size: 0.88rem; }
+.fin-category strong { font-variant-numeric: tabular-nums; }
+.fin-track { width: 100%; height: 6px; background: #13151f; border-radius: 5px; overflow: hidden; }
+.fin-track i { display: block; height: 100%; background: #fb7185; border-radius: inherit; }
+.fin-potential { border-top: 1px solid #2a2f42; margin-top: 1rem; padding-top: 1rem; color: #aeb5c6; font-size: 0.88rem; }
+.fin-potential strong { color: #60a5fa; font-size: 1.05rem; }
+.fin-list-header { margin-bottom: 1rem; }
+.fin-filters { display: grid; grid-template-columns: minmax(200px, 2fr) repeat(2, minmax(140px, 1fr)); gap: 0.6rem; margin-bottom: 0.8rem; }
+.fin-table-wrap { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.fin-table { width: 100%; min-width: 900px; border-collapse: collapse; text-align: left; font-size: 0.86rem; }
+.fin-table th, .fin-table td { padding: 0.75rem 0.65rem; border-bottom: 1px solid #2a2f42; vertical-align: middle; }
+.fin-table th { color: #aeb5c6; font-weight: 600; white-space: nowrap; }
+.fin-table td { color: #e2e8f0; }
+.fin-source { display: block; margin-top: 0.2rem; color: #8a8f9d; font-size: 0.75rem; }
+.fin-pill-in, .fin-pill-out, .fin-pill-paid, .fin-pill-pending { display: inline-block; padding: 0.2rem 0.45rem; border-radius: 999px; white-space: nowrap; font-size: 0.76rem; }
+.fin-pill-in, .fin-pill-paid { color: #bbf7d0; background: #14532d; }
+.fin-pill-out { color: #fecdd3; background: #881337; }
+.fin-pill-pending { color: #fde68a; background: #78350f; }
+.fin-amount-in, .fin-amount-out { text-align: right; white-space: nowrap; font-weight: 700; }
+.fin-amount-in { color: #86efac !important; }
+.fin-amount-out { color: #fda4af !important; }
+.fin-row-actions { display: flex; gap: 0.35rem; }
+.fin-row-actions button { min-height: 34px; padding: 0.3rem 0.5rem !important; font-size: 0.78rem !important; white-space: nowrap; }
+
 @media (max-width: 800px) {
   .fit-shell { flex-direction: column; min-height: 100dvh; }
   .fit-sidebar {
@@ -131,6 +182,13 @@ body {
   .aluno-form-grid { grid-template-columns: minmax(0, 1fr); }
   .aluno-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .aluno-kpis > div:last-child:nth-child(odd) { grid-column: 1 / -1; }
+  .fin-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .fin-grid { grid-template-columns: minmax(0, 1fr); }
+  .fin-header, .fin-list-header { align-items: stretch; flex-direction: column; }
+  .fin-month { display: grid; grid-template-columns: 1fr 1fr; }
+  .fin-month strong { grid-column: 1 / -1; grid-row: 1; }
+  .fin-filters { grid-template-columns: minmax(0, 1fr); }
+  .fin-table { min-width: 850px; }
 }
 
 @media (max-width: 480px) {
@@ -139,6 +197,14 @@ body {
   .fit-main > div > div[style*="padding: 1.5rem"] { padding: 1rem !important; }
   .aluno-kpis { grid-template-columns: minmax(0, 1fr); }
   .aluno-kpis > div:last-child:nth-child(odd) { grid-column: auto; }
+  .fin-kpis { grid-template-columns: minmax(0, 1fr); }
+  .fin-form-row { align-items: stretch; flex-direction: column; }
+  .fin-month { gap: 0.4rem; }
+  .fin-month button { padding-inline: 0.45rem !important; font-size: 0.8rem !important; }
+  .fin-chart { gap: 0.25rem; }
+  .fin-chart-col { font-size: 0.75rem; }
+  .fin-chart-bars { height: 95px; }
+  .fin-potential { align-items: flex-start; flex-direction: column; }
   .fit-main button { min-height: 40px; }
   .fit-main input, .fit-main select, .fit-main textarea { min-width: 0; font-size: 16px; }
 }
