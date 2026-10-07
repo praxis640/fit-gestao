@@ -190,4 +190,90 @@ export function Vendas({ userId, alunos, onVendaRegistrada }: {
             <input style={campo} value={nomeProduto} maxLength={120} required onChange={(e) => setNomeProduto(e.target.value)} placeholder="Ex.: Luvas de boxe" />
           </label>
           <label style={label}>Categoria
-            <input style={campo} value={c
+            <input style={campo} value={categoriaProduto} maxLength={120} onChange={(e) => setCategoriaProduto(e.target.value)} placeholder="Ex.: Equipamentos" />
+          </label>
+          <label style={label}>Preço de venda (R$) *
+            <input style={campo} type="number" min="0.01" step="0.01" value={precoProduto} required onChange={(e) => setPrecoProduto(e.target.value)} placeholder="0,00" />
+          </label>
+          <label style={label}>Custo de compra por unidade (R$) *
+            <input style={campo} type="number" min="0" step="0.01" value={custoProduto} required onChange={(e) => setCustoProduto(e.target.value)} placeholder="0,00" />
+          </label>
+          <div style={{ display: 'flex', gap: '0.6rem' }}>
+            <button type="submit" disabled={salvando} style={{ ...botao, backgroundColor: '#635bfc' }}>{salvando ? 'Salvando...' : produtoEditando ? 'Salvar produto' : 'Adicionar produto'}</button>
+            {produtoEditando && <button type="button" onClick={() => { setProdutoEditando(null); setNomeProduto(''); setCategoriaProduto(''); setPrecoProduto(''); setCustoProduto(''); }} style={{ ...botao, backgroundColor: '#3a3f55' }}>Cancelar</button>}
+          </div>
+        </form>
+
+        <form onSubmit={registrarVenda} style={{ display: 'grid', alignContent: 'start', gap: '0.8rem', padding: '1rem', border: '1px solid #3a3f55', borderRadius: '8px' }}>
+          <h3 style={{ margin: 0 }}>Registrar venda</h3>
+          <label style={label}>Produto *
+            <select style={campo} value={produtoId} required onChange={(e) => { setProdutoId(e.target.value); const selecionado = produtos.find((p) => p.id === e.target.value); setPrecoVenda(selecionado ? String(selecionado.preco) : ''); setCustoVenda(selecionado?.custo == null ? '' : String(selecionado.custo)); }}>
+              <option value="">Selecione um produto</option>
+              {produtos.filter((produto) => produto.ativo).map((produto) => <option key={produto.id} value={produto.id}>{produto.nome} · R$ {Number(produto.preco).toFixed(2)}</option>)}
+            </select>
+          </label>
+          <label style={label}>Aluno *
+            <select style={campo} value={alunoId} required onChange={(e) => setAlunoId(e.target.value)}>
+              <option value="">Selecione o aluno</option>
+              {alunos.filter((aluno) => aluno.status === 'Ativo').map((aluno) => <option key={aluno.id} value={aluno.id}>{aluno.nome}</option>)}
+            </select>
+          </label>
+          <label style={label}>Preço praticado por unidade (R$) *
+            <input style={campo} type="number" min="0.01" step="0.01" value={precoVenda || (produtoSelecionado ? String(produtoSelecionado.preco) : '')} required disabled={!produtoSelecionado} onChange={(e) => setPrecoVenda(e.target.value)} placeholder="0,00" />
+          </label>
+          <label style={label}>Custo pago por unidade (R$) *
+            <input style={campo} type="number" min="0" step="0.01" value={custoVenda} required disabled={!produtoSelecionado} onChange={(e) => setCustoVenda(e.target.value)} placeholder="Informe quanto pagou por unidade" />
+            <small>Preenchido com o custo cadastrado do produto; você pode ajustar para esta venda.</small>
+          </label>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.8rem' }}>
+            <label style={label}>Quantidade *
+              <input style={campo} type="number" min="1" max="10000" step="1" value={quantidade} required onChange={(e) => setQuantidade(e.target.value)} />
+            </label>
+            <label style={label}>Data da venda *
+              <input style={campo} type="date" value={dataVenda} required onChange={(e) => setDataVenda(e.target.value)} />
+            </label>
+          </div>
+          {produtoSelecionado && <div aria-live="polite" style={{ display: 'grid', gap: '0.25rem', padding: '0.75rem', background: '#13151f', borderRadius: 8 }}>
+            <span style={{ color: '#aeb5c6' }}>Total da venda: R$ {(precoUnitarioSelecionado * quantidadeCalculada).toFixed(2)}</span>
+            {custoVendaInformado ? <>
+              <span style={{ color: '#aeb5c6' }}>Custo total: R$ {(custoUnitarioSelecionado * quantidadeCalculada).toFixed(2)}</span>
+              <strong style={{ color: (precoUnitarioSelecionado - custoUnitarioSelecionado) >= 0 ? '#86efac' : '#fca5a5' }}>
+                Lucro bruto: R$ {((precoUnitarioSelecionado - custoUnitarioSelecionado) * quantidadeCalculada).toFixed(2)}
+              </strong>
+            </> : <span style={{ color: '#fbbf24' }}>Informe o custo pago para calcular o lucro.</span>}
+          </div>}
+          <button type="submit" disabled={salvando || produtos.every((produto) => !produto.ativo) || alunos.every((aluno) => aluno.status !== 'Ativo')} style={{ ...botao, backgroundColor: '#166534' }}>
+            {salvando ? 'Registrando...' : 'Registrar venda e lançar nos ganhos'}
+          </button>
+          {alunos.every((aluno) => aluno.status !== 'Ativo') && <small style={{ color: '#fbbf24' }}>Cadastre um aluno ativo para vincular a venda.</small>}
+        </form>
+      </div>
+    </section>
+
+    <section style={caixa}>
+      <h3 style={{ margin: '0 0 1rem' }}>Catálogo de produtos</h3>
+      {produtos.length === 0 && !carregando && <p style={{ color: '#aeb5c6' }}>Nenhum produto cadastrado ainda.</p>}
+      {produtos.map((produto) => <div key={produto.id} style={{ padding: '0.8rem 0', borderBottom: '1px solid #2a2f42', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.7rem' }}>
+        <div>
+          <strong>{produto.nome}</strong> <span style={{ color: '#86efac' }}>R$ {Number(produto.preco).toFixed(2)}</span>
+          <div style={{ color: '#aeb5c6', fontSize: '0.85rem' }}>{produto.categoria || 'Sem categoria'} · custo {produto.custo == null ? 'não informado' : `R$ ${Number(produto.custo).toFixed(2)}`} · lucro previsto {produto.custo == null ? '—' : `R$ ${(Number(produto.preco) - Number(produto.custo)).toFixed(2)}`} · {produto.ativo ? 'Disponível para venda' : 'Inativo'}</div>
+        </div>
+        <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <button type="button" onClick={() => { setProdutoEditando(produto.id); setNomeProduto(produto.nome); setCategoriaProduto(produto.categoria); setPrecoProduto(String(produto.preco)); setCustoProduto(produto.custo == null ? '' : String(produto.custo)); }} style={{ ...botao, backgroundColor: '#3b82f6' }}>Editar</button>
+          <button type="button" onClick={() => void alternarProduto(produto)} style={{ ...botao, backgroundColor: produto.ativo ? '#7c2d12' : '#166534' }}>{produto.ativo ? 'Desativar' : 'Ativar'}</button>
+        </div>
+      </div>)}
+    </section>
+
+    <section style={caixa}>
+      <h3 style={{ margin: '0 0 0.4rem' }}>Histórico de vendas</h3>
+      <p style={{ color: '#aeb5c6', fontSize: '0.85rem', margin: '0 0 0.6rem' }}>As vendas ficam registradas com o preço praticado e entram na receita da academia na data informada.</p>
+      {carregando && <p style={{ color: '#aeb5c6' }}>Carregando vendas...</p>}
+      {!carregando && vendas.length === 0 && <p style={{ color: '#aeb5c6' }}>Nenhuma venda registrada.</p>}
+      {vendas.map((venda) => <div key={venda.id} style={{ padding: '0.8rem 0', borderBottom: '1px solid #2a2f42', display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.7rem' }}>
+        <div><strong>{venda.produto_nome}</strong><div style={{ color: '#aeb5c6', fontSize: '0.85rem' }}>{venda.aluno_nome} · {venda.quantidade} × R$ {Number(venda.valor_unitario).toFixed(2)} · {venda.data_venda.split('-').reverse().join('/')}</div></div>
+        <div style={{ textAlign: 'right' }}><strong style={{ color: '#86efac' }}>Venda R$ {Number(venda.valor_total).toFixed(2)}</strong><div style={{ color: '#aeb5c6', fontSize: '0.85rem' }}>{venda.custo_unitario == null ? 'Lucro indisponível (venda antiga)' : `Custo R$ ${(Number(venda.custo_unitario) * Number(venda.quantidade)).toFixed(2)} · lucro bruto R$ ${(Number(venda.valor_total) - Number(venda.custo_unitario) * Number(venda.quantidade)).toFixed(2)}`}</div></div>
+      </div>)}
+    </section>
+  </div>;
+}

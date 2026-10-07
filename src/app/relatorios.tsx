@@ -135,4 +135,164 @@ export function Relatorios({
     const operacionaisPeriodo = registros.filter((r) => (planoSelecionado === 'todos' || Boolean(r.aluno_id && idsAlunosDoPlano.has(String(r.aluno_id)))) && noPeriodo(r.data_registro || r.criado_em));
     const modulos = (['exercicio', 'treino', 'nutricao'] as const).map((tipo) => ({
       tipo,
-      titulo: tipo === 'exercicio' ? 'Exercí
+      titulo: tipo === 'exercicio' ? 'Exercícios' : tipo === 'treino' ? 'Fichas de treino' : 'Rotinas de nutrição',
+      registros: operacionaisPeriodo.filter((r) => r.tipo === tipo)
+    }));
+    const barrasPresenca: BarraRelatorio[] = [...presencasPorAluno.entries()]
+      .sort((a, b) => b[1] - a[1]).slice(0, 5)
+      .map(([id, valor]) => ({ rotulo: nomesAlunos.get(id) || 'Aluno removido', valor, texto: `${valor} presença(s)`, cor: '#15a77a' }));
+    const barrasPlanos: BarraRelatorio[] = [...categoriasPlanos.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6)
+      .map(([rotulo, valor]) => ({ rotulo, valor, texto: `${valor} aluno(s)`, cor: '#635bfc' }));
+    const barrasProdutos: BarraRelatorio[] = [...vendasPorItem.entries()].sort((a, b) => b[1].valor - a[1].valor).slice(0, 6)
+      .map(([rotulo, valor]) => ({ rotulo, valor: valor.valor, texto: money(valor.valor), cor: '#0d9ca6' }));
+    const registrosPorTipo = modulos.map((m) => ({ ...m, alunos: new Set(m.registros.map((r) => r.aluno_id).filter(Boolean)).size }));
+
+    return {
+      ativos: ativos.length,
+      inativos: alunosDoPlano.length - ativos.length,
+      alunosNovos,
+      situacoes,
+      planosVencidos,
+      planosProximos,
+      totalPresencas: frequenciasPeriodo.length,
+      alunosPresentes: presencasPorAluno.size,
+      pagamentosPeriodo,
+      vendasPeriodo,
+      receitasMensalidades,
+      receitaVendas,
+      receitasExtrasPagas,
+      despesasPagas,
+      entradasPendentes,
+      despesasPendentes,
+      receitaTotal,
+      saldo,
+      unidadesVendidas: vendasPeriodo.reduce((s, v) => s + Number(v.quantidade || 1), 0),
+      ticketMedio: vendasPeriodo.length ? receitaVendas / vendasPeriodo.length : 0,
+      lancamentosPeriodo,
+      operacionaisPeriodo,
+      registrosPorTipo,
+      barrasPresenca,
+      barrasPlanos,
+      barrasProdutos,
+      presencaMedia: ativos.length ? frequenciasPeriodo.length / ativos.length : 0
+    };
+  }, [alunosDoPlano, frequenciasDoPlano, planos, pagamentosDoPlano, vendasDoPlano, lancamentos, registros, hoje, intervalo, planoSelecionado, idsAlunosDoPlano]);
+
+  const secoes = useMemo<SecaoRelatorio[]>(() => {
+    const linhasFinanceiras = [
+      `Mensalidades registradas no período: ${money(dados.receitasMensalidades)} (${dados.pagamentosPeriodo.length} pagamento(s)).`,
+      `Vendas de produtos: ${money(dados.receitaVendas)} em ${dados.vendasPeriodo.length} venda(s), ${dados.unidadesVendidas} unidade(s); ticket médio ${money(dados.ticketMedio)}.`,
+      `Receitas extras pagas: ${money(dados.receitasExtrasPagas)}. Despesas pagas: ${money(dados.despesasPagas)}.`,
+      `Contas pendentes cadastradas no período: ${money(dados.entradasPendentes)} a receber e ${money(dados.despesasPendentes)} a pagar.`,
+      `Saldo operacional registrado: ${money(dados.saldo)} (receitas registradas menos despesas pagas).`
+    ];
+    const linhasAlunos = [
+      `${dados.ativos} aluno(s) ativo(s) e ${dados.inativos} inativo(s); ${dados.alunosNovos} cadastro(s) no período.`,
+      `Situação das mensalidades hoje: ${dados.situacoes.emDia} em dia, ${dados.situacoes.pendente} pendentes e ${dados.situacoes.atrasado} atrasados.`,
+      `${dados.planosVencidos} plano(s) vencido(s) e ${dados.planosProximos} com vencimento nos próximos 7 dias.`
+    ];
+    const linhasVendas = dados.vendasPeriodo.length
+      ? [`Vendas vinculadas a aluno: ${dados.vendasPeriodo.filter((v) => v.aluno_id || v.aluno_nome).length} de ${dados.vendasPeriodo.length}.`, ...dados.vendasPeriodo.slice(0, 5).map((v) => `${dataBr(v.data_venda)} · ${v.produto_nome || 'Produto'} · ${v.aluno_nome || 'Sem aluno vinculado'} · ${money(Number(v.valor_total || 0))}.`)]
+      : ['Nenhuma venda registrada no período.'];
+    const linhasModulos = dados.registrosPorTipo.map((item) => `${item.titulo}: ${item.registros.length} registro(s) no período${item.tipo !== 'exercicio' ? `, vinculados a ${item.alunos} aluno(s)` : ''}.`);
+    const linhasDespesas = dados.lancamentosPeriodo.filter((l) => l.tipo === 'saida').slice(0, 6)
+      .map((l) => `${dataBr(l.status === 'pago' ? (l.data_pagamento || l.vencimento) : l.vencimento)} · ${l.categoria || l.descricao} · ${money(Number(l.valor || 0))} · ${l.status === 'pago' ? 'pago' : 'pendente'}.`);
+    return [
+      { titulo: 'Alunos, planos e cobranças', linhas: linhasAlunos, barras: dados.barrasPlanos },
+      { titulo: 'Financeiro', linhas: linhasFinanceiras },
+      { titulo: 'Despesas cadastradas', linhas: linhasDespesas },
+      { titulo: 'Frequência e participação', linhas: [`${dados.totalPresencas} presença(s) registradas; ${dados.alunosPresentes} aluno(s) compareceram ao menos uma vez.`, `Média de ${dados.presencaMedia.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} presença(s) por aluno ativo no período.`], barras: dados.barrasPresenca },
+      { titulo: 'Vendas e produtos', linhas: linhasVendas, barras: dados.barrasProdutos },
+      { titulo: 'Exercícios, treinos e nutrição', linhas: linhasModulos },
+      { titulo: 'Cadastro de planos', linhas: planos.length ? planos.map((p) => `${p.nome}: ${p.duracao_dias} dia(s), valor de referência ${money(Number(p.valor || 0))}.`).slice(0, 8) : ['Nenhum plano cadastrado.'] }
+    ];
+  }, [dados, planos]);
+
+  async function baixarPdf() {
+    if (intervalo.inicio > intervalo.fim) { setMensagem('A data inicial precisa ser anterior à data final.'); return; }
+    setGerando(true);
+    setMensagem('');
+    try {
+      const emitidoEm = dataBr(hoje);
+      const pdf = gerarPdfRelatorioAcademia({
+        academia: planoSelecionado === 'todos' ? academia : `${academia} · Plano ${planoSelecionado}`,
+        periodo: `${dataBr(intervalo.inicio)} a ${dataBr(intervalo.fim)}`,
+        emitidoEm,
+        indicadores: [
+          { titulo: 'Alunos ativos', valor: String(dados.ativos), detalhe: `${dados.inativos} inativos`, cor: '#635bfc' },
+          { titulo: 'Presenças', valor: String(dados.totalPresencas), detalhe: `${dados.alunosPresentes} aluno(s)`, cor: '#0d9ca6' },
+          { titulo: 'Receitas', valor: money(dados.receitaTotal), detalhe: 'valores pagos registrados', cor: '#15a77a' },
+          { titulo: 'Saldo operacional', valor: money(dados.saldo), detalhe: 'receitas menos despesas pagas', cor: dados.saldo >= 0 ? '#15a77a' : '#d8495b' }
+        ],
+        secoes: [...secoes, { titulo: 'Observação metodológica', linhas: [
+          'Os indicadores refletem apenas informações cadastradas no sistema e o intervalo escolhido.',
+          ...(planoSelecionado === 'todos' ? [] : [`Relatório do plano ${planoSelecionado}: vendas, lançamentos e atividades sem vínculo a um aluno desse plano foram omitidos deste recorte.`]),
+          'A situação de pagamento e os vencimentos de planos são uma fotografia da data de emissão; os pagamentos são agrupados pela competência registrada.',
+          'Saldo operacional é um resumo dos lançamentos pagos cadastrados e não substitui escrituração contábil nem apura lucro ou impostos.'
+        ] }]
+      });
+      const blob = new Blob([new Uint8Array(pdf)], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `relatorio-${academia.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]+/g, '-').toLowerCase()}-${planoSelecionado === 'todos' ? 'todos-os-planos' : planoSelecionado.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]+/g, '-').toLowerCase()}-${intervalo.inicio}-${intervalo.fim}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1500);
+      setMensagem('Relatório PDF gerado e baixado.');
+    } catch (error) {
+      setMensagem(error instanceof Error ? `Não foi possível gerar o PDF: ${error.message}` : 'Não foi possível gerar o PDF.');
+    } finally {
+      setGerando(false);
+    }
+  }
+
+  const periodoNome = faixa === 'mes' ? nomeMes(hoje) : `${dataBr(intervalo.inicio)} a ${dataBr(intervalo.fim)}`;
+  return <div className="reports-page">
+    <header className="reports-header" style={card}>
+      <div><span className="reports-eyebrow">GESTÃO DA ACADEMIA</span><h2>Relatórios e resultados</h2><p>Consolide alunos, financeiro, frequência, vendas e módulos operacionais em um PDF pronto para apresentar.</p></div>
+      <button className="reports-download" type="button" onClick={() => void baixarPdf()} disabled={carregando || gerando}>{gerando ? 'Preparando PDF…' : '⇩  Baixar relatório completo em PDF'}</button>
+    </header>
+
+    <section className="reports-controls" style={card}>
+      <div><h3>Período e plano</h3><p>Os dados e indicadores abaixo são recalculados conforme o intervalo e o tipo de plano.</p></div>
+      <label style={{ display: 'grid', gap: 6, maxWidth: 360, color: '#aeb5c6' }}>Relatório por plano
+        <select value={planoSelecionado} onChange={(e) => setPlanoSelecionado(e.target.value)} style={{ padding: '0.7rem', borderRadius: 7, border: '1px solid #3a3f55', background: '#13151f', color: '#fff' }}>
+          <option value="todos">Todos os planos</option>
+          {[...new Set([...planos.map((p) => p.nome), ...alunos.map((a) => a.plano_nome || 'Plano não informado')])].sort((a, b) => a.localeCompare(b, 'pt-BR')).map((nome) => <option key={nome} value={nome}>{nome}</option>)}
+        </select>
+      </label>
+      <div className="reports-presets" role="group" aria-label="Selecionar período">
+        {([['mes', 'Este mês'], ['30', '30 dias'], ['90', '90 dias'], ['ano', 'Este ano'], ['tudo', 'Todo o histórico'], ['personalizado', 'Personalizado']] as [Faixa, string][]).map(([value, label]) =>
+          <button key={value} type="button" aria-pressed={faixa === value} className={faixa === value ? 'is-active' : ''} onClick={() => setFaixa(value)}>{label}</button>)}
+      </div>
+      {faixa === 'personalizado' && <div className="reports-date-fields">
+        <label>De <input type="date" value={inicioPersonalizado} max={fimPersonalizado || undefined} onChange={(e) => setInicioPersonalizado(e.target.value)} /></label>
+        <label>Até <input type="date" value={fimPersonalizado} min={inicioPersonalizado || undefined} onChange={(e) => setFimPersonalizado(e.target.value)} /></label>
+      </div>}
+      <div className="reports-period-summary"><span>Intervalo selecionado</span><strong>{periodoNome}</strong><span>{dados.pagamentosPeriodo.length} mensalidade(s) · {dados.vendasPeriodo.length} venda(s) · {dados.totalPresencas} presença(s)</span></div>
+    </section>
+
+    {errosDados.length > 0 && <div className="reports-warning" role="status"><b>Alguns dados podem não aparecer:</b> {errosDados.join(' ')}</div>}
+    {mensagem && <div className="reports-message" role="status">{mensagem}</div>}
+    {carregando ? <div style={card}>Carregando registros complementares para o relatório…</div> : <>
+      <section className="reports-kpis" aria-label="Resumo dos resultados">
+        {[
+          ['Alunos ativos', String(dados.ativos), `${dados.alunosNovos} novo(s) no período`, '#a9a4ff'],
+          ['Adimplência hoje', `${dados.ativos ? Math.round(dados.situacoes.emDia / dados.ativos * 100) : 0}%`, `${dados.situacoes.emDia} de ${dados.ativos} ativos em dia`, '#4ade80'],
+          ['Presenças', String(dados.totalPresencas), `${dados.alunosPresentes} aluno(s) presentes`, '#22d3ee'],
+          ['Receitas recebidas', money(dados.receitaTotal), `Saldo após despesas: ${money(dados.saldo)}`, dados.saldo >= 0 ? '#4ade80' : '#fb7185']
+        ].map(([titulo, valor, detalhe, cor]) => <article key={titulo} style={card}><small>{titulo}</small><strong style={{ color: cor }}>{valor}</strong><span>{detalhe}</span></article>)}
+      </section>
+
+      <section className="reports-grid">
+        <article style={card}><h3>Alunos e planos</h3><div className="reports-stat-list"><span>Ativos <b>{dados.ativos}</b></span><span>Inativos <b>{dados.inativos}</b></span><span>Novos no período <b>{dados.alunosNovos}</b></span><span>Mensalidades em dia <b>{dados.situacoes.emDia}</b></span><span>Atrasadas <b>{dados.situacoes.atrasado}</b></span><span>Planos vencidos / próximos 7 dias <b>{dados.planosVencidos} / {dados.planosProximos}</b></span></div>{dados.barrasPlanos.length > 0 && <div className="reports-bars">{dados.barrasPlanos.slice(0, 4).map((bar) => <div key={bar.rotulo}><span>{bar.rotulo}</span><b>{bar.valor}</b></div>)}</div>}</article>
+        <article style={card}><h3>Financeiro do período</h3><div className="reports-stat-list"><span>Mensalidades <b>{money(dados.receitasMensalidades)}</b></span><span>Vendas <b>{money(dados.receitaVendas)}</b></span><span>Receitas extras <b>{money(dados.receitasExtrasPagas)}</b></span><span>Despesas pagas <b>{money(dados.despesasPagas)}</b></span><span>Saldo operacional <b className={dados.saldo < 0 ? 'reports-negative' : 'reports-positive'}>{money(dados.saldo)}</b></span><span>Pendências a receber / pagar <b>{money(dados.entradasPendentes)} / {money(dados.despesasPendentes)}</b></span></div></article>
+        <article style={card}><h3>Frequência</h3><p className="reports-large-number">{dados.totalPresencas}<small>presenças registradas</small></p><p className="reports-muted">{dados.alunosPresentes} aluno(s) compareceram pelo menos uma vez no intervalo.</p>{dados.barrasPresenca.length > 0 && <div className="reports-bars">{dados.barrasPresenca.slice(0, 4).map((bar) => <div key={bar.rotulo}><span>{bar.rotulo}</span><b>{bar.valor}</b></div>)}</div>}</article>
+        <article style={card}><h3>Vendas e operação</h3><div className="reports-stat-list"><span>Vendas <b>{dados.vendasPeriodo.length}</b></span><span>Unidades vendidas <b>{dados.unidadesVendidas}</b></span><span>Ticket médio <b>{money(dados.ticketMedio)}</b></span>{dados.registrosPorTipo.map((item) => <span key={item.tipo}>{item.titulo} <b>{item.registros.length}</b></span>)}</div>{dados.barrasProdutos.length > 0 && <div className="reports-bars">{dados.barrasProdutos.slice(0, 4).map((bar) => <div key={bar.rotulo}><span>{bar.rotulo}</span><b>{money(bar.valor)}</b></div>)}</div>}</article>
+      </section>
+      <div className="reports-footnote">O PDF inclui os indicadores, listas resumidas e gráficos por aluno/plano/produto. Os resultados refletem os registros salvos no sistema até a data de emissão.</div>
+    </>}
+  </div>;
+}
