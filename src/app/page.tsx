@@ -969,6 +969,7 @@ export default function Home() {
             planos={planos}
             pagamentos={pagamentos}
             vendas={vendasFinanceiras}
+            erroVendas={erroVendasFinanceiras}
           />
         )}
 

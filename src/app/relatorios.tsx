@@ -9,7 +9,7 @@ type AlunoRelatorio = { id?: string | number; nome: string; telefone?: string; d
 type FrequenciaRelatorio = { aluno_id: string | number; data: string };
 type PlanoRelatorio = { nome: string; duracao_dias: number; valor: number };
 type PagamentoRelatorio = { id: number; aluno_id: string; valor: number; competencia: string };
-type VendaRelatorio = { id: string; valor_total: number; data_venda: string; produto_nome?: string; categoria?: string; quantidade?: number; aluno_id?: string | null; aluno_nome?: string };
+type VendaRelatorio = { id: string; valor_total: number; data_venda: string; produto_nome?: string; categoria?: string; quantidade?: number; aluno_id?: string | null; aluno_nome?: string; custo_unitario?: number | null };
 type RegistroOperacional = { id: string; tipo: string; titulo: string; categoria: string; detalhes: string; aluno_id: string | null; valor: number | null; quantidade: number; data_registro: string; criado_em: string };
 type Lancamento = { id: string; tipo: 'entrada' | 'saida'; descricao: string; categoria: string; valor: number; vencimento: string; data_pagamento: string | null; status: 'pago' | 'pendente'; aluno_id: string | null; forma_pagamento: string };
 type Faixa = 'mes' | '30' | '90' | 'ano' | 'tudo' | 'personalizado';
@@ -23,9 +23,14 @@ const dataAnterior = (data: string, dias: number) => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 const nomeMes = (data: string) => new Date(`${data}T12:00:00`).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+function lucroDaVenda(venda: VendaRelatorio): number | null {
+  if (venda.custo_unitario == null) return null;
+  const lucro = Number(venda.valor_total || 0) - Number(venda.custo_unitario) * Number(venda.quantidade || 1);
+  return Number.isFinite(lucro) ? lucro : null;
+}
 
 export function Relatorios({
-  userId, academia, hoje, alunos, frequencias, planos, pagamentos, vendas
+  userId, academia, hoje, alunos, frequencias, planos, pagamentos, vendas, erroVendas
 }: {
   userId: string;
   academia: string;
@@ -35,6 +40,7 @@ export function Relatorios({
   planos: PlanoRelatorio[];
   pagamentos: PagamentoRelatorio[];
   vendas: VendaRelatorio[];
+  erroVendas?: string | null;
 }) {
   const [registros, setRegistros] = useState<RegistroOperacional[]>([]);
   const [lancamentos, setLancamentos] = useState<Lancamento[]>([]);
@@ -60,7 +66,7 @@ export function Relatorios({
           .eq('user_id', userId).order('vencimento', { ascending: false }).range(0, 9999)
       ]);
       if (!ativo) return;
-      const erros: string[] = [];
+      const erros: string[] = erroVendas ? [`Vendas e custos não puderam ser carregados: ${erroVendas}`] : [];
       if (resRegistros.error) { erros.push('Módulos de exercício, treino e nutrição: execute a migração dos módulos operacionais.'); setRegistros([]); }
       else setRegistros((resRegistros.data || []) as RegistroOperacional[]);
       if (resLancamentos.error) { erros.push('Lançamentos manuais do financeiro indisponíveis; execute a migração do controle financeiro.'); setLancamentos([]); }
@@ -70,7 +76,7 @@ export function Relatorios({
     }
     void carregarComplementos();
     return () => { ativo = false; };
-  }, [userId]);
+  }, [userId, erroVendas]);
 
   const intervalo = useMemo(() => {
     if (faixa === 'personalizado') return { inicio: inicioPersonalizado, fim: fimPersonalizado };
@@ -113,6 +119,10 @@ export function Relatorios({
     const lancamentosPeriodo = lancamentos.filter((l) => (planoSelecionado === 'todos' || Boolean(l.aluno_id && idsAlunosDoPlano.has(String(l.aluno_id)))) && noPeriodo(l.status === 'pago' ? (l.data_pagamento || l.vencimento) : l.vencimento));
     const receitasMensalidades = pagamentosPeriodo.reduce((s, p) => s + Number(p.valor || 0), 0);
     const receitaVendas = vendasPeriodo.reduce((s, v) => s + Number(v.valor_total || 0), 0);
+    const vendasComCusto = vendasPeriodo.filter((venda) => lucroDaVenda(venda) !== null);
+    const vendasSemCusto = vendasPeriodo.length - vendasComCusto.length;
+    const custoProdutos = vendasComCusto.reduce((s, venda) => s + Number(venda.custo_unitario) * Number(venda.quantidade || 1), 0);
+    const lucroVendas = vendasComCusto.reduce((s, venda) => s + (lucroDaVenda(venda) || 0), 0);
     const receitasExtrasPagas = lancamentosPeriodo.filter((l) => l.tipo === 'entrada' && l.status === 'pago').reduce((s, l) => s + Number(l.valor || 0), 0);
     const despesasPagas = lancamentosPeriodo.filter((l) => l.tipo === 'saida' && l.status === 'pago').reduce((s, l) => s + Number(l.valor || 0), 0);
     const entradasPendentes = lancamentosPeriodo.filter((l) => l.tipo === 'entrada' && l.status === 'pendente').reduce((s, l) => s + Number(l.valor || 0), 0);
@@ -160,6 +170,10 @@ export function Relatorios({
       vendasPeriodo,
       receitasMensalidades,
       receitaVendas,
+      custoProdutos,
+      lucroVendas,
+      vendasComCusto: vendasComCusto.length,
+      vendasSemCusto,
       receitasExtrasPagas,
       despesasPagas,
       entradasPendentes,
@@ -181,7 +195,10 @@ export function Relatorios({
   const secoes = useMemo<SecaoRelatorio[]>(() => {
     const linhasFinanceiras = [
       `Mensalidades registradas no período: ${money(dados.receitasMensalidades)} (${dados.pagamentosPeriodo.length} pagamento(s)).`,
-      `Vendas de produtos: ${money(dados.receitaVendas)} em ${dados.vendasPeriodo.length} venda(s), ${dados.unidadesVendidas} unidade(s); ticket médio ${money(dados.ticketMedio)}.`,
+      ...(erroVendas ? [`Vendas e lucro indisponíveis neste relatório: ${erroVendas}`] : [
+        `Vendas de produtos: ${money(dados.receitaVendas)} em ${dados.vendasPeriodo.length} venda(s), ${dados.unidadesVendidas} unidade(s); ticket médio ${money(dados.ticketMedio)}.`,
+        `Custo dos produtos vendidos: ${money(dados.custoProdutos)}. Lucro real das vendas: ${money(dados.lucroVendas)} (vendas menos custos cadastrados; calculado em ${dados.vendasComCusto} venda(s)).${dados.vendasSemCusto ? ` ${dados.vendasSemCusto} venda(s) sem custo informado ficaram fora do cálculo.` : ''}`
+      ]),
       `Receitas extras pagas: ${money(dados.receitasExtrasPagas)}. Despesas pagas: ${money(dados.despesasPagas)}.`,
       `Contas pendentes cadastradas no período: ${money(dados.entradasPendentes)} a receber e ${money(dados.despesasPendentes)} a pagar.`,
       `Saldo operacional registrado: ${money(dados.saldo)} (receitas registradas menos despesas pagas).`
@@ -191,8 +208,15 @@ export function Relatorios({
       `Situação das mensalidades hoje: ${dados.situacoes.emDia} em dia, ${dados.situacoes.pendente} pendentes e ${dados.situacoes.atrasado} atrasados.`,
       `${dados.planosVencidos} plano(s) vencido(s) e ${dados.planosProximos} com vencimento nos próximos 7 dias.`
     ];
-    const linhasVendas = dados.vendasPeriodo.length
-      ? [`Vendas vinculadas a aluno: ${dados.vendasPeriodo.filter((v) => v.aluno_id || v.aluno_nome).length} de ${dados.vendasPeriodo.length}.`, ...dados.vendasPeriodo.slice(0, 5).map((v) => `${dataBr(v.data_venda)} · ${v.produto_nome || 'Produto'} · ${v.aluno_nome || 'Sem aluno vinculado'} · ${money(Number(v.valor_total || 0))}.`)]
+    const linhasVendas = erroVendas
+      ? [`Não foi possível calcular as vendas e os custos: ${erroVendas}`]
+      : dados.vendasPeriodo.length
+      ? [`Vendas vinculadas a aluno: ${dados.vendasPeriodo.filter((v) => v.aluno_id || v.aluno_nome).length} de ${dados.vendasPeriodo.length}.`, ...dados.vendasPeriodo.slice(0, 5).map((v) => {
+        const lucro = lucroDaVenda(v);
+        const quantidade = Number(v.quantidade || 1);
+        const custo = v.custo_unitario == null ? null : Number(v.custo_unitario) * quantidade;
+        return `${dataBr(v.data_venda)} · ${v.produto_nome || 'Produto'} · ${v.aluno_nome || 'Sem aluno vinculado'} · venda ${money(Number(v.valor_total || 0))} · ${custo === null ? 'custo não informado; lucro não calculado' : `custo ${money(custo)}; lucro ${money(lucro || 0)}`}.`;
+      })]
       : ['Nenhuma venda registrada no período.'];
     const linhasModulos = dados.registrosPorTipo.map((item) => `${item.titulo}: ${item.registros.length} registro(s) no período${item.tipo !== 'exercicio' ? `, vinculados a ${item.alunos} aluno(s)` : ''}.`);
     const linhasDespesas = dados.lancamentosPeriodo.filter((l) => l.tipo === 'saida').slice(0, 6)
@@ -206,7 +230,7 @@ export function Relatorios({
       { titulo: 'Exercícios, treinos e nutrição', linhas: linhasModulos },
       { titulo: 'Cadastro de planos', linhas: planos.length ? planos.map((p) => `${p.nome}: ${p.duracao_dias} dia(s), valor de referência ${money(Number(p.valor || 0))}.`).slice(0, 8) : ['Nenhum plano cadastrado.'] }
     ];
-  }, [dados, planos]);
+  }, [dados, planos, erroVendas]);
 
   async function baixarPdf() {
     if (intervalo.inicio > intervalo.fim) { setMensagem('A data inicial precisa ser anterior à data final.'); return; }
@@ -222,13 +246,14 @@ export function Relatorios({
           { titulo: 'Alunos ativos', valor: String(dados.ativos), detalhe: `${dados.inativos} inativos`, cor: '#635bfc' },
           { titulo: 'Presenças', valor: String(dados.totalPresencas), detalhe: `${dados.alunosPresentes} aluno(s)`, cor: '#0d9ca6' },
           { titulo: 'Receitas', valor: money(dados.receitaTotal), detalhe: 'valores pagos registrados', cor: '#15a77a' },
-          { titulo: 'Saldo operacional', valor: money(dados.saldo), detalhe: 'receitas menos despesas pagas', cor: dados.saldo >= 0 ? '#15a77a' : '#d8495b' }
+          { titulo: 'Lucro real das vendas', valor: erroVendas ? 'Indisponível' : money(dados.lucroVendas), detalhe: erroVendas ? 'Não foi possível carregar as vendas' : `${dados.vendasComCusto} venda(s) com custo informado`, cor: '#0d9ca6' }
         ],
         secoes: [...secoes, { titulo: 'Observação metodológica', linhas: [
           'Os indicadores refletem apenas informações cadastradas no sistema e o intervalo escolhido.',
           ...(planoSelecionado === 'todos' ? [] : [`Relatório do plano ${planoSelecionado}: vendas, lançamentos e atividades sem vínculo a um aluno desse plano foram omitidos deste recorte.`]),
           'A situação de pagamento e os vencimentos de planos são uma fotografia da data de emissão; os pagamentos são agrupados pela competência registrada.',
-          'Saldo operacional é um resumo dos lançamentos pagos cadastrados e não substitui escrituração contábil nem apura lucro ou impostos.'
+          erroVendas ? `Lucro das vendas indisponível porque a consulta falhou: ${erroVendas}` : `Lucro das vendas é calculado como valor vendido menos custo unitário cadastrado vezes quantidade. ${dados.vendasSemCusto} venda(s) sem custo informado não entram nesse cálculo; esse indicador não desconta despesas operacionais, taxas ou impostos e não representa lucro líquido contábil.`,
+          `Saldo operacional registrado no período: ${money(dados.saldo)} (receitas registradas menos despesas pagas).`
         ] }]
       });
       const blob = new Blob([new Uint8Array(pdf)], { type: 'application/pdf' });
@@ -282,17 +307,17 @@ export function Relatorios({
           ['Alunos ativos', String(dados.ativos), `${dados.alunosNovos} novo(s) no período`, '#a9a4ff'],
           ['Adimplência hoje', `${dados.ativos ? Math.round(dados.situacoes.emDia / dados.ativos * 100) : 0}%`, `${dados.situacoes.emDia} de ${dados.ativos} ativos em dia`, '#4ade80'],
           ['Presenças', String(dados.totalPresencas), `${dados.alunosPresentes} aluno(s) presentes`, '#22d3ee'],
-          ['Receitas recebidas', money(dados.receitaTotal), `Saldo após despesas: ${money(dados.saldo)}`, dados.saldo >= 0 ? '#4ade80' : '#fb7185']
+          ['Lucro real das vendas', erroVendas ? 'Indisponível' : money(dados.lucroVendas), erroVendas ? 'Não foi possível carregar as vendas' : dados.vendasSemCusto ? `${dados.vendasSemCusto} venda(s) sem custo informado` : `${dados.vendasComCusto} venda(s) com custo calculado`, '#4ade80']
         ].map(([titulo, valor, detalhe, cor]) => <article key={titulo} style={card}><small>{titulo}</small><strong style={{ color: cor }}>{valor}</strong><span>{detalhe}</span></article>)}
       </section>
 
       <section className="reports-grid">
         <article style={card}><h3>Alunos e planos</h3><div className="reports-stat-list"><span>Ativos <b>{dados.ativos}</b></span><span>Inativos <b>{dados.inativos}</b></span><span>Novos no período <b>{dados.alunosNovos}</b></span><span>Mensalidades em dia <b>{dados.situacoes.emDia}</b></span><span>Atrasadas <b>{dados.situacoes.atrasado}</b></span><span>Planos vencidos / próximos 7 dias <b>{dados.planosVencidos} / {dados.planosProximos}</b></span></div>{dados.barrasPlanos.length > 0 && <div className="reports-bars">{dados.barrasPlanos.slice(0, 4).map((bar) => <div key={bar.rotulo}><span>{bar.rotulo}</span><b>{bar.valor}</b></div>)}</div>}</article>
-        <article style={card}><h3>Financeiro do período</h3><div className="reports-stat-list"><span>Mensalidades <b>{money(dados.receitasMensalidades)}</b></span><span>Vendas <b>{money(dados.receitaVendas)}</b></span><span>Receitas extras <b>{money(dados.receitasExtrasPagas)}</b></span><span>Despesas pagas <b>{money(dados.despesasPagas)}</b></span><span>Saldo operacional <b className={dados.saldo < 0 ? 'reports-negative' : 'reports-positive'}>{money(dados.saldo)}</b></span><span>Pendências a receber / pagar <b>{money(dados.entradasPendentes)} / {money(dados.despesasPendentes)}</b></span></div></article>
+        <article style={card}><h3>Financeiro do período</h3><div className="reports-stat-list"><span>Mensalidades <b>{money(dados.receitasMensalidades)}</b></span><span>Vendas <b>{erroVendas ? 'Indisponível' : money(dados.receitaVendas)}</b></span><span>Custo dos produtos vendidos <b>{erroVendas ? 'Indisponível' : money(dados.custoProdutos)}</b></span><span>Lucro real das vendas <b className="reports-positive">{erroVendas ? 'Indisponível' : money(dados.lucroVendas)}</b></span><span>Receitas extras <b>{money(dados.receitasExtrasPagas)}</b></span><span>Despesas pagas <b>{money(dados.despesasPagas)}</b></span><span>Saldo operacional <b className={dados.saldo < 0 ? 'reports-negative' : 'reports-positive'}>{money(dados.saldo)}</b></span><span>Pendências a receber / pagar <b>{money(dados.entradasPendentes)} / {money(dados.despesasPendentes)}</b></span></div></article>
         <article style={card}><h3>Frequência</h3><p className="reports-large-number">{dados.totalPresencas}<small>presenças registradas</small></p><p className="reports-muted">{dados.alunosPresentes} aluno(s) compareceram pelo menos uma vez no intervalo.</p>{dados.barrasPresenca.length > 0 && <div className="reports-bars">{dados.barrasPresenca.slice(0, 4).map((bar) => <div key={bar.rotulo}><span>{bar.rotulo}</span><b>{bar.valor}</b></div>)}</div>}</article>
         <article style={card}><h3>Vendas e operação</h3><div className="reports-stat-list"><span>Vendas <b>{dados.vendasPeriodo.length}</b></span><span>Unidades vendidas <b>{dados.unidadesVendidas}</b></span><span>Ticket médio <b>{money(dados.ticketMedio)}</b></span>{dados.registrosPorTipo.map((item) => <span key={item.tipo}>{item.titulo} <b>{item.registros.length}</b></span>)}</div>{dados.barrasProdutos.length > 0 && <div className="reports-bars">{dados.barrasProdutos.slice(0, 4).map((bar) => <div key={bar.rotulo}><span>{bar.rotulo}</span><b>{money(bar.valor)}</b></div>)}</div>}</article>
       </section>
-      <div className="reports-footnote">O PDF inclui os indicadores, listas resumidas e gráficos por aluno/plano/produto. Os resultados refletem os registros salvos no sistema até a data de emissão.</div>
+      <div className="reports-footnote">O PDF inclui indicadores, vendas, custos e lucros calculados com os dados salvos. Vendas sem custo informado não entram no lucro; o lucro das vendas não desconta despesas operacionais, taxas ou impostos.</div>
     </>}
   </div>;
 }
