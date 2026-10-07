@@ -10,8 +10,8 @@ type SituacaoLancamento = 'pendente' | 'pago';
 type CategoriaLancamento = { id: string; user_id: string; tipo: TipoLancamento; descricao: string; categoria: string; valor: number; vencimento: string; data_pagamento: string | null; status: SituacaoLancamento; forma_pagamento: string; aluno_id: string | null; observacoes: string; criado_em: string };
 type AlunoFinanceiro = { id?: string | number; nome: string; status: 'Ativo' | 'Inativo'; valor_mensalidade?: number; dia_vencimento?: number; proximo_vencimento?: string | null; status_pagamento?: 'Em Dia' | 'Pendente' | 'Atrasado'; fim_plano?: string | null };
 type PagamentoFinanceiro = { id: number; aluno_id: string; valor: number; competencia: string };
-type VendaFinanceira = { id: string; valor_total: number; data_venda: string; produto_nome?: string; aluno_nome?: string };
-type LinhaFinanceira = { id: string; tipo: TipoLancamento; descricao: string; categoria: string; valor: number; data: string; situacao: SituacaoLancamento; origem: string; aluno: string; forma: string; editavel?: CategoriaLancamento };
+type VendaFinanceira = { id: string; valor_total: number; data_venda: string; produto_nome?: string; aluno_nome?: string; quantidade?: number | null; custo_unitario?: number | null };
+type LinhaFinanceira = { id: string; tipo: TipoLancamento; descricao: string; categoria: string; valor: number; data: string; situacao: SituacaoLancamento; origem: string; aluno: string; forma: string; custo?: number | null; lucroBruto?: number | null; editavel?: CategoriaLancamento };
 
 const categoriasEntrada = ['Outras receitas', 'Matrícula', 'Aula avulsa', 'Aluguel de espaço', 'Patrocínio', 'Outros'];
 const categoriasSaida = ['Aluguel', 'Salários e encargos', 'Água, luz e internet', 'Equipamentos', 'Manutenção', 'Materiais', 'Marketing', 'Impostos e taxas', 'Limpeza', 'Outros'];
@@ -96,11 +96,15 @@ export function Financeiro({
         categoria: 'Mensalidades', valor: Number(p.valor), data: p.competencia.slice(0, 10), situacao: 'pago' as const,
         origem: 'Pagamento de aluno', aluno: mapaAlunos.get(String(p.aluno_id))?.nome || '—', forma: '—'
       })),
-      ...vendas.filter(v => v.data_venda.startsWith(mesChave)).map(v => ({
-        id: `venda-${v.id}`, tipo: 'entrada' as const, descricao: v.produto_nome || 'Venda de produto',
-        categoria: 'Vendas', valor: Number(v.valor_total), data: v.data_venda, situacao: 'pago' as const,
-        origem: 'Venda', aluno: v.aluno_nome || '—', forma: '—'
-      }))
+      ...vendas.filter(v => v.data_venda.startsWith(mesChave)).map(v => {
+        const custo = v.custo_unitario == null ? null : Number(v.custo_unitario) * Number(v.quantidade || 1);
+        return {
+          id: `venda-${v.id}`, tipo: 'entrada' as const, descricao: v.produto_nome || 'Venda de produto',
+          categoria: 'Vendas', valor: Number(v.valor_total), data: v.data_venda, situacao: 'pago' as const,
+          origem: 'Venda', aluno: v.aluno_nome || '—', forma: '—', custo,
+          lucroBruto: custo === null ? null : Number(v.valor_total) - custo
+        };
+      })
     ];
     const manuais: LinhaFinanceira[] = lancamentos.filter(l => {
       const data = l.status === 'pago' ? (l.data_pagamento || l.vencimento) : l.vencimento;
@@ -122,12 +126,15 @@ export function Financeiro({
     const mensalidadesAReceber = mesChave === hoje.slice(0, 7)
       ? somar(alunos.filter(a => a.status === 'Ativo' && a.id != null && !alunosPagosNoMes.has(String(a.id))).map(a => Number(a.valor_mensalidade || 0)))
       : 0;
+    const vendasDoMes = vendas.filter(v => v.data_venda.startsWith(mesChave));
+    const vendasComCusto = vendasDoMes.filter(v => v.custo_unitario != null);
+    const lucroVendas = somar(vendasComCusto.map(v => Number(v.valor_total) - Number(v.custo_unitario) * Number(v.quantidade || 1)));
     const atrasados = lancamentos.filter(l => l.status === 'pendente' && l.vencimento < hoje);
     const atrasoTotal = somar(atrasados.map(l => Number(l.valor))) + (mesChave === hoje.slice(0, 7)
       ? somar(alunos.filter(a => a.status === 'Ativo' && a.id != null && situacaoPagamento(a, alunosPagosNoMes, hoje) === 'Atrasado').map(a => Number(a.valor_mensalidade || 0))) : 0);
     const potencial = somar(alunos.filter(a => a.status === 'Ativo').map(a => Number(a.valor_mensalidade || 0)));
-    return { entradas, saidas, saldo: entradas - saidas, receber: receberManual + mensalidadesAReceber, pagar, atrasoTotal, potencial };
-  }, [linhas, lancamentos, alunos, mesChave, hoje, alunosPagosNoMes]);
+    return { entradas, saidas, saldo: entradas - saidas, receber: receberManual + mensalidadesAReceber, pagar, atrasoTotal, potencial, lucroVendas, vendasSemCusto: vendasDoMes.length - vendasComCusto.length };
+  }, [linhas, lancamentos, alunos, vendas, mesChave, hoje, alunosPagosNoMes]);
 
   const ultimosMeses = useMemo(() => Array.from({ length: 6 }, (_, i) => {
     const data = new Date(mes.getFullYear(), mes.getMonth() - 5 + i, 1);
@@ -202,8 +209,10 @@ export function Financeiro({
   }
 
   function baixarCsv() {
-    const tabela = [['Data', 'Tipo', 'Descrição', 'Categoria', 'Valor', 'Situação', 'Origem', 'Aluno', 'Forma de pagamento'], ...linhasFiltradas.map(l => [
+    const tabela = [['Data', 'Tipo', 'Descrição', 'Categoria', 'Valor', 'Custo do produto', 'Lucro bruto', 'Situação', 'Origem', 'Aluno', 'Forma de pagamento'], ...linhasFiltradas.map(l => [
       dataBrasil(l.data), l.tipo === 'entrada' ? 'Entrada' : 'Saída', l.descricao, l.categoria, l.valor.toFixed(2).replace('.', ','),
+      l.custo == null ? '' : l.custo.toFixed(2).replace('.', ','),
+      l.lucroBruto == null ? '' : l.lucroBruto.toFixed(2).replace('.', ','),
       l.situacao === 'pago' ? 'Pago' : 'Pendente', l.origem, l.aluno, l.forma
     ])].map(linha => linha.map(csvSeguro).join(';')).join('\r\n');
     const link = document.createElement('a'); link.href = URL.createObjectURL(new Blob(['\ufeff', tabela], { type: 'text/csv;charset=utf-8' }));
@@ -232,7 +241,8 @@ export function Financeiro({
         ['Saldo do mês', reais(resumo.saldo), resumo.saldo >= 0 ? '#22c55e' : '#fb7185', 'Entradas recebidas menos despesas pagas'],
         ['A receber', reais(resumo.receber), '#60a5fa', 'Parcelas pendentes e mensalidades não baixadas'],
         ['A pagar', reais(resumo.pagar), '#fbbf24', 'Despesas pendentes com vencimento no mês'],
-        ['Em atraso', reais(resumo.atrasoTotal), '#f87171', 'Mensalidades e lançamentos vencidos em aberto']
+        ['Em atraso', reais(resumo.atrasoTotal), '#f87171', 'Mensalidades e lançamentos vencidos em aberto'],
+        ['Lucro bruto das vendas', reais(resumo.lucroVendas), '#34d399', resumo.vendasSemCusto ? `${resumo.vendasSemCusto} venda(s) sem custo informado; lucro parcial` : 'Vendas menos custos cadastrados']
       ].map(([titulo, valorCard, cor, descricaoCard]) => <article key={titulo} style={painel}>
         <small style={{ color: '#aeb5c6' }}>{titulo}</small><strong style={{ display: 'block', margin: '0.5rem 0', fontSize: '1.55rem', color: cor }}>{valorCard}</strong><small style={{ color: '#8a8f9d' }}>{descricaoCard}</small>
       </article>)}
@@ -270,7 +280,7 @@ export function Financeiro({
       <div className="fin-list-header"><div><h3 style={{ margin: 0 }}>Movimentações do mês</h3><p style={{ color: '#aeb5c6', margin: '0.3rem 0 0', fontSize: '0.85rem' }}>Lançamentos automáticos e manuais. Mensalidades e vendas automáticas não podem ser editadas aqui.</p></div><button style={botao} onClick={baixarCsv}>Baixar CSV</button></div>
       <div className="fin-filters"><input style={campo} value={busca} onChange={e => setBusca(e.target.value)} placeholder="Buscar descrição, categoria ou aluno" /><select style={campo} value={filtroTipo} onChange={e => setFiltroTipo(e.target.value as typeof filtroTipo)}><option value="todos">Entradas e saídas</option><option value="entrada">Entradas</option><option value="saida">Despesas</option></select><select style={campo} value={filtroStatus} onChange={e => setFiltroStatus(e.target.value as typeof filtroStatus)}><option value="todos">Pagos e pendentes</option><option value="pago">Pagos</option><option value="pendente">Pendentes</option></select></div>
       {carregando ? <p style={{ color: '#aeb5c6' }}>Carregando movimentações…</p> : linhasFiltradas.length === 0 ? <p style={{ color: '#aeb5c6' }}>Nenhuma movimentação encontrada neste mês.</p> : <div className="fin-table-wrap"><table className="fin-table"><thead><tr><th>Data</th><th>Tipo</th><th>Descrição</th><th>Categoria</th><th>Aluno</th><th>Forma</th><th>Situação</th><th style={{ textAlign: 'right' }}>Valor</th><th>Ações</th></tr></thead><tbody>{linhasFiltradas.map(l => <tr key={l.id}>
-        <td>{dataBrasil(l.data)}</td><td><span className={l.tipo === 'entrada' ? 'fin-pill-in' : 'fin-pill-out'}>{l.tipo === 'entrada' ? 'Entrada' : 'Saída'}</span></td><td>{l.descricao}<small className="fin-source">{l.origem}</small></td><td>{l.categoria}</td><td>{l.aluno}</td><td>{l.forma}</td><td><span className={l.situacao === 'pago' ? 'fin-pill-paid' : 'fin-pill-pending'}>{l.situacao === 'pago' ? 'Pago' : 'Pendente'}</span></td><td className={l.tipo === 'entrada' ? 'fin-amount-in' : 'fin-amount-out'}>{l.tipo === 'entrada' ? '+' : '−'}{reais(l.valor)}</td><td>{l.editavel && <div className="fin-row-actions">{l.situacao === 'pendente' && <button style={botao} onClick={() => void marcarPago(l.editavel!)}>Dar baixa</button>}<button style={botao} onClick={() => editar(l.editavel!)}>Editar</button><button style={{ ...botao, color: '#fca5a5' }} onClick={() => void excluir(l.editavel!)}>Excluir</button></div>}</td>
+        <td>{dataBrasil(l.data)}</td><td><span className={l.tipo === 'entrada' ? 'fin-pill-in' : 'fin-pill-out'}>{l.tipo === 'entrada' ? 'Entrada' : 'Saída'}</span></td><td>{l.descricao}<small className="fin-source">{l.origem}</small>{l.custo !== undefined && <small className="fin-source">{l.custo === null ? 'Custo não informado · lucro indisponível' : `Custo ${reais(l.custo)} · lucro bruto ${reais(l.lucroBruto || 0)}`}</small>}</td><td>{l.categoria}</td><td>{l.aluno}</td><td>{l.forma}</td><td><span className={l.situacao === 'pago' ? 'fin-pill-paid' : 'fin-pill-pending'}>{l.situacao === 'pago' ? 'Pago' : 'Pendente'}</span></td><td className={l.tipo === 'entrada' ? 'fin-amount-in' : 'fin-amount-out'}>{l.tipo === 'entrada' ? '+' : '−'}{reais(l.valor)}</td><td>{l.editavel && <div className="fin-row-actions">{l.situacao === 'pendente' && <button style={botao} onClick={() => void marcarPago(l.editavel!)}>Dar baixa</button>}<button style={botao} onClick={() => editar(l.editavel!)}>Editar</button><button style={{ ...botao, color: '#fca5a5' }} onClick={() => void excluir(l.editavel!)}>Excluir</button></div>}</td>
       </tr>)}</tbody></table></div>}
     </section>
   </div>;
