@@ -13,6 +13,7 @@ import { PerfilAluno } from './perfil-aluno';
 import { Vendas } from './vendas';
 import { Financeiro } from './financeiro';
 import { Relatorios } from './relatorios';
+import { Cobrancas } from './cobrancas';
 import { Session } from '@supabase/supabase-js';
 
 interface Aluno {
@@ -836,6 +837,7 @@ export default function Home() {
     { nome: 'Treinos', icone: '🏃', temSeta: false },
     { nome: 'Nutrição', icone: '🥣', temSeta: false },
     { nome: 'Vendas', icone: '🛍️', temSeta: false },
+    { nome: 'Cobranças', icone: '💳', temSeta: false },
     { nome: 'Financeiro', icone: '💵', temSeta: false },
     { nome: 'Relatorios', icone: '📋', temSeta: false },
     { nome: 'Configurações', icone: '⚙️', temSeta: false },
@@ -983,6 +985,14 @@ export default function Home() {
             erroVendas={erroVendasFinanceiras}
             mes={mesFinanceiro}
             onMesChange={setMesFinanceiro}
+          />
+        )}
+
+        {!erroDados && abaAtiva === 'Cobranças' && session && (
+          <Cobrancas
+            key={`${session.user.id}-cobrancas`}
+            userId={session.user.id}
+            alunos={alunos.filter((aluno): aluno is Aluno & { id: string | number } => aluno.id != null)}
           />
         )}
 
