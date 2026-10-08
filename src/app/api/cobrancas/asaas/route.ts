@@ -56,6 +56,10 @@ export async function POST(request: NextRequest) {
   const competencia = `${vencimento.slice(0, 7)}-01`;
   const ambiente = process.env.ASAAS_ENV === 'production' ? 'production' : 'sandbox';
 
+  const { data: pagamentoManual } = await supabase.from('pagamentos').select('id')
+    .eq('user_id', userId).eq('aluno_id', aluno.id).eq('competencia', competencia).maybeSingle();
+  if (pagamentoManual) return respostaErro('Já existe um pagamento registrado para este aluno nesta competência.', 409);
+
   const { data: existente } = await supabase.from('gestao_cobrancas').select('id,status,url_fatura,codigo_pix')
     .eq('user_id', userId).eq('aluno_id', aluno.id).eq('competencia', competencia).maybeSingle();
   if (existente?.url_fatura && ['pendente', 'processando'].includes(existente.status)) {

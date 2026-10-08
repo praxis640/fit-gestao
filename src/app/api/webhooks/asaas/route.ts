@@ -5,11 +5,11 @@ export const runtime = 'nodejs';
 
 const estados: Record<string, string> = {
   PAYMENT_RECEIVED: 'recebido',
-  PAYMENT_CONFIRMED: 'recebido',
+  // Pix pode permanecer CONFIRMED durante análise; só RECEIVED entra no financeiro.
+  PAYMENT_CONFIRMED: 'pendente',
   PAYMENT_OVERDUE: 'atrasado',
   PAYMENT_DELETED: 'cancelado',
-  PAYMENT_REFUNDED: 'estornado',
-  PAYMENT_REFUND_IN_PROGRESS: 'estornado'
+  PAYMENT_REFUNDED: 'estornado'
 };
 
 export async function POST(request: NextRequest) {

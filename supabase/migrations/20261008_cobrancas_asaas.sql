@@ -30,6 +30,7 @@ create index if not exists gestao_cobrancas_aluno_data
 alter table public.gestao_cobrancas enable row level security;
 revoke all on public.gestao_cobrancas from public, anon;
 grant select on public.gestao_cobrancas to authenticated;
+grant all on public.gestao_cobrancas to service_role;
 
 drop policy if exists gestao_cobrancas_owner_read on public.gestao_cobrancas;
 create policy gestao_cobrancas_owner_read on public.gestao_cobrancas
@@ -64,6 +65,7 @@ begin
   for update;
 
   if not found then return; end if;
+  if v_cobranca.status = 'estornado' and p_status <> 'estornado' then return; end if;
   if v_cobranca.status = 'recebido' and p_status <> 'estornado' then return; end if;
 
   update public.gestao_cobrancas
@@ -72,7 +74,38 @@ begin
       atualizado_em = now()
   where id = v_cobranca.id;
 
-  if p_status <> 'recebido' then return; end if;
+  if p_status = 'estornado' then
+    delete from public.pagamentos
+    where user_id = v_cobranca.user_id
+      and aluno_id = v_cobranca.aluno_id::text
+      and competencia = v_cobranca.competencia;
+    get diagnostics v_inseridos = row_count;
+    if v_inseridos = 0 then return; end if;
+  elsif p_status <> 'recebido' then
+    return;
+  end if;
+
+  if p_status = 'estornado' then
+    -- O vencimento só volta se não houve outro pagamento que já o avançou.
+    select a.proximo_vencimento into v_aluno
+    from public.alunos a
+    where a.id = v_cobranca.aluno_id
+      and (a.user_id = v_cobranca.user_id or a.academia_id = v_cobranca.user_id)
+    for update;
+    if not found then return; end if;
+    v_novo_vencimento := (date_trunc('month', v_cobranca.vencimento + interval '1 month')
+      + make_interval(days => least(
+        extract(day from v_cobranca.vencimento)::integer,
+        extract(day from (date_trunc('month', v_cobranca.vencimento + interval '2 months') - interval '1 day'))::integer
+      ) - 1))::date;
+    if v_aluno.proximo_vencimento = v_novo_vencimento then
+      update public.alunos
+      set status_pagamento = case when v_cobranca.vencimento < v_hoje then 'Atrasado' else 'Pendente' end,
+          proximo_vencimento = v_cobranca.vencimento
+      where id = v_cobranca.aluno_id;
+    end if;
+    return;
+  end if;
 
   insert into public.pagamentos (user_id, aluno_id, valor, competencia)
   values (v_cobranca.user_id, v_cobranca.aluno_id::text, v_cobranca.valor, v_cobranca.competencia)

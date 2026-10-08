@@ -19,6 +19,6 @@ As variáveis privadas devem ficar somente no servidor. Não use o prefixo `NEXT
 
 Cadastre um webhook para `https://fit-gestao-two.vercel.app/api/webhooks/asaas`, com o mesmo `ASAAS_WEBHOOK_TOKEN`. Selecione os eventos `PAYMENT_RECEIVED`, `PAYMENT_CONFIRMED`, `PAYMENT_OVERDUE`, `PAYMENT_DELETED` e `PAYMENT_REFUNDED`.
 
-O app cria uma cobrança Pix por aluno e competência, mostra a fatura e permite preparar uma mensagem com o link no WhatsApp. O operador revisa e envia a mensagem manualmente. O pagamento só entra no financeiro depois do evento autenticado do Asaas.
+O app cria uma cobrança Pix por aluno e competência, mostra a fatura e permite preparar uma mensagem com o link no WhatsApp. O operador revisa e envia a mensagem manualmente. O pagamento só entra no financeiro após o evento autenticado `PAYMENT_RECEIVED`; `PAYMENT_CONFIRMED` não basta para marcar como pago.
 
 Para produção, use uma chave da conta de produção e altere `ASAAS_ENV` para `production`. Cadastros de clientes do Sandbox não são reaproveitados em produção.
