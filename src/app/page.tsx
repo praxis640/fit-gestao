@@ -134,6 +134,10 @@ export default function Home() {
   const [password, setPassword] = useState('');
   const [modoAuth, setModoAuth] = useState<'login' | 'signup'>('login');
   const [authCarregando, setAuthCarregando] = useState(false);
+  const [recuperacaoSenha, setRecuperacaoSenha] = useState<'solicitar' | 'definir' | null>(null);
+  const [novaSenha, setNovaSenha] = useState('');
+  const [confirmarNovaSenha, setConfirmarNovaSenha] = useState('');
+  const [mensagemAuth, setMensagemAuth] = useState('');
 
   useEffect(() => {
     const timer = window.setInterval(() => setInstanteAtual(new Date()), 60_000);
@@ -172,7 +176,13 @@ export default function Home() {
       setSession(novaSessao);
     }
     supabase.auth.getSession().then(({ data: { session } }) => aplicarSessao(session));
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => aplicarSessao(session));
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setRecuperacaoSenha('definir');
+        setMensagemAuth('Defina uma nova senha para sua conta.');
+      }
+      aplicarSessao(session);
+    });
     return () => subscription.unsubscribe();
   }, []);
 
@@ -659,14 +669,56 @@ export default function Home() {
   async function handleAuth(e: React.FormEvent) {
     e.preventDefault();
     setAuthCarregando(true);
+    setMensagemAuth('');
     if (modoAuth === 'login') {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) alert('Erro ao entrar: ' + error.message);
+      if (error) setMensagemAuth('Não foi possível entrar: ' + error.message);
     } else {
       const { data, error } = await supabase.auth.signUp({ email, password });
-      if (error) alert('Erro ao criar conta: ' + error.message);
-      else alert(data.session ? 'Conta criada e conectada!' : 'Conta criada. Verifique seu e-mail para confirmar o cadastro antes de entrar.');
+      if (error) setMensagemAuth('Erro ao criar conta: ' + error.message);
+      else setMensagemAuth(data.session ? 'Conta criada e conectada!' : 'Conta criada. Verifique seu e-mail para confirmar o cadastro antes de entrar.');
     }
+    setAuthCarregando(false);
+  }
+
+  async function handleSolicitarRecuperacao(e: React.FormEvent) {
+    e.preventDefault();
+    setAuthCarregando(true);
+    setMensagemAuth('');
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: `${window.location.origin}/`
+    });
+    setMensagemAuth(error
+      ? `Não foi possível enviar o e-mail: ${error.message}`
+      : 'Se este e-mail estiver cadastrado, você receberá um link para criar uma nova senha. Confira também o spam.');
+    setAuthCarregando(false);
+  }
+
+  async function handleDefinirNovaSenha(e: React.FormEvent) {
+    e.preventDefault();
+    if (novaSenha.length < 8) {
+      setMensagemAuth('A nova senha precisa ter pelo menos 8 caracteres.');
+      return;
+    }
+    if (novaSenha !== confirmarNovaSenha) {
+      setMensagemAuth('As senhas não coincidem.');
+      return;
+    }
+    setAuthCarregando(true);
+    setMensagemAuth('');
+    const { error } = await supabase.auth.updateUser({ password: novaSenha });
+    if (error) {
+      setMensagemAuth(`Não foi possível alterar a senha: ${error.message}`);
+      setAuthCarregando(false);
+      return;
+    }
+    await supabase.auth.signOut();
+    setPassword('');
+    setNovaSenha('');
+    setConfirmarNovaSenha('');
+    setRecuperacaoSenha(null);
+    setModoAuth('login');
+    setMensagemAuth('Senha alterada. Entre com sua nova senha.');
     setAuthCarregando(false);
   }
 
@@ -808,22 +860,52 @@ export default function Home() {
     }
   }
 
-  if (!session) {
+  if (!session || recuperacaoSenha === 'definir') {
+    const formularioRecuperacao = recuperacaoSenha === 'solicitar';
+    const formularioNovaSenha = recuperacaoSenha === 'definir';
     return (
       <div style={{ backgroundColor: '#13151f', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontFamily: 'sans-serif' }}>
         <div style={{ backgroundColor: '#1e2230', padding: '2.5rem', borderRadius: '12px', width: '100%', maxWidth: '400px', border: '1px solid #2a2f42' }}>
-          <h2 style={{ textAlign: 'center', marginBottom: '1.5rem' }}>FitGestão - Login</h2>
-          <form onSubmit={handleAuth} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            <input type="email" placeholder="E-mail" value={email} onChange={(e) => setEmail(e.target.value)} required style={{ padding: '0.8rem', borderRadius: '6px', border: '1px solid #2a2f42', backgroundColor: '#13151f', color: '#fff' }} />
-            <input type="password" placeholder="Senha" value={password} onChange={(e) => setPassword(e.target.value)} required style={{ padding: '0.8rem', borderRadius: '6px', border: '1px solid #2a2f42', backgroundColor: '#13151f', color: '#fff' }} />
-            <button type="submit" disabled={authCarregando} style={{ padding: '0.8rem', borderRadius: '6px', border: 'none', backgroundColor: '#635bfc', color: '#fff', fontWeight: 'bold', cursor: 'pointer' }}>
-              {authCarregando ? 'Processando...' : modoAuth === 'login' ? 'Entrar' : 'Cadastrar'}
-            </button>
-          </form>
-          <p style={{ textAlign: 'center', marginTop: '1rem', fontSize: '0.9rem', color: '#8a8f9d' }}>
-            <span style={{ cursor: 'pointer', color: '#635bfc' }} onClick={() => setModoAuth(modoAuth === 'login' ? 'signup' : 'login')}>
-              {modoAuth === 'login' ? 'Criar nova conta de academia' : 'Já tenho uma conta'}
-            </span>
+          <h2 style={{ textAlign: 'center', marginBottom: '0.6rem' }}>
+            {formularioNovaSenha ? 'Criar nova senha' : formularioRecuperacao ? 'Recuperar senha' : 'FitGestão - Login'}
+          </h2>
+          <p style={{ textAlign: 'center', margin: '0 0 1.5rem', fontSize: '0.9rem', color: '#aeb5c6' }}>
+            {formularioNovaSenha ? 'Escolha uma senha nova para acessar sua conta.' : formularioRecuperacao ? 'Informe o e-mail da sua conta para receber o link de recuperação.' : ''}
+          </p>
+          {formularioNovaSenha ? (
+            <form onSubmit={handleDefinirNovaSenha} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <input type="password" placeholder="Nova senha (mínimo 8 caracteres)" value={novaSenha} onChange={(e) => setNovaSenha(e.target.value)} minLength={8} autoComplete="new-password" required style={{ padding: '0.8rem', borderRadius: '6px', border: '1px solid #2a2f42', backgroundColor: '#13151f', color: '#fff' }} />
+              <input type="password" placeholder="Confirme a nova senha" value={confirmarNovaSenha} onChange={(e) => setConfirmarNovaSenha(e.target.value)} minLength={8} autoComplete="new-password" required style={{ padding: '0.8rem', borderRadius: '6px', border: '1px solid #2a2f42', backgroundColor: '#13151f', color: '#fff' }} />
+              <button type="submit" disabled={authCarregando} style={{ padding: '0.8rem', borderRadius: '6px', border: 'none', backgroundColor: '#635bfc', color: '#fff', fontWeight: 'bold', cursor: 'pointer' }}>
+                {authCarregando ? 'Salvando...' : 'Salvar nova senha'}
+              </button>
+            </form>
+          ) : formularioRecuperacao ? (
+            <form onSubmit={handleSolicitarRecuperacao} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <input type="email" placeholder="E-mail da sua conta" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="email" style={{ padding: '0.8rem', borderRadius: '6px', border: '1px solid #2a2f42', backgroundColor: '#13151f', color: '#fff' }} />
+              <button type="submit" disabled={authCarregando} style={{ padding: '0.8rem', borderRadius: '6px', border: 'none', backgroundColor: '#635bfc', color: '#fff', fontWeight: 'bold', cursor: 'pointer' }}>
+                {authCarregando ? 'Enviando...' : 'Enviar link de recuperação'}
+              </button>
+            </form>
+          ) : (
+            <form onSubmit={handleAuth} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <input type="email" placeholder="E-mail" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="email" style={{ padding: '0.8rem', borderRadius: '6px', border: '1px solid #2a2f42', backgroundColor: '#13151f', color: '#fff' }} />
+              <input type="password" placeholder="Senha" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={modoAuth === 'signup' ? 8 : undefined} autoComplete={modoAuth === 'login' ? 'current-password' : 'new-password'} style={{ padding: '0.8rem', borderRadius: '6px', border: '1px solid #2a2f42', backgroundColor: '#13151f', color: '#fff' }} />
+              <button type="submit" disabled={authCarregando} style={{ padding: '0.8rem', borderRadius: '6px', border: 'none', backgroundColor: '#635bfc', color: '#fff', fontWeight: 'bold', cursor: 'pointer' }}>
+                {authCarregando ? 'Processando...' : modoAuth === 'login' ? 'Entrar' : 'Cadastrar'}
+              </button>
+            </form>
+          )}
+          {mensagemAuth && <p role="status" style={{ color: '#c6cbda', fontSize: '0.9rem', lineHeight: 1.5 }}>{mensagemAuth}</p>}
+          <p style={{ textAlign: 'center', marginTop: '1rem', fontSize: '0.9rem', color: '#8a8f9d', display: 'flex', flexDirection: 'column', gap: '0.7rem' }}>
+            {!formularioNovaSenha && recuperacaoSenha === null && modoAuth === 'login' && <button type="button" onClick={() => { setRecuperacaoSenha('solicitar'); setMensagemAuth(''); }} style={{ background: 'transparent', border: 0, color: '#a9a3ff', cursor: 'pointer' }}>Esqueceu a senha?</button>}
+            {recuperacaoSenha !== null ? (
+              !formularioNovaSenha && <button type="button" onClick={() => { setRecuperacaoSenha(null); setMensagemAuth(''); }} style={{ background: 'transparent', border: 0, color: '#a9a3ff', cursor: 'pointer' }}>Voltar para entrar</button>
+            ) : (
+              !formularioNovaSenha && <button type="button" onClick={() => { setModoAuth(modoAuth === 'login' ? 'signup' : 'login'); setMensagemAuth(''); }} style={{ background: 'transparent', border: 0, color: '#635bfc', cursor: 'pointer' }}>
+                {modoAuth === 'login' ? 'Criar nova conta de academia' : 'Já tenho uma conta'}
+              </button>
+            )}
           </p>
         </div>
       </div>
