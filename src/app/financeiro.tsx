@@ -8,7 +8,7 @@ import { supabase } from '@/lib/supabase';
 type TipoLancamento = 'entrada' | 'saida';
 type SituacaoLancamento = 'pendente' | 'pago';
 type CategoriaLancamento = { id: string; user_id: string; tipo: TipoLancamento; descricao: string; categoria: string; valor: number; vencimento: string; data_pagamento: string | null; status: SituacaoLancamento; forma_pagamento: string; aluno_id: string | null; observacoes: string; criado_em: string };
-type AlunoFinanceiro = { id?: string | number; nome: string; status: 'Ativo' | 'Inativo'; valor_mensalidade?: number; dia_vencimento?: number; status_pagamento?: 'Em Dia' | 'Pendente' | 'Atrasado'; fim_plano?: string | null };
+type AlunoFinanceiro = { id?: string | number; nome: string; status: 'Ativo' | 'Inativo'; valor_mensalidade?: number; dia_vencimento?: number; proximo_vencimento?: string | null; status_pagamento?: 'Em Dia' | 'Pendente' | 'Atrasado'; fim_plano?: string | null };
 type PagamentoFinanceiro = { id: number; aluno_id: string; valor: number; competencia: string };
 type VendaFinanceira = { id: string; valor_total: number; data_venda: string; produto_nome?: string; aluno_nome?: string };
 type LinhaFinanceira = { id: string; tipo: TipoLancamento; descricao: string; categoria: string; valor: number; data: string; situacao: SituacaoLancamento; origem: string; aluno: string; forma: string; editavel?: CategoriaLancamento };

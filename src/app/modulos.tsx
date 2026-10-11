@@ -6,6 +6,7 @@ import { formatarTelefone, telefoneValido } from '@/lib/alunos';
 import { catalogoExercicios, gruposMusculares } from '@/lib/catalogo-exercicios';
 import { lerFicha, textoDaFicha, type ItemFicha } from '@/lib/fichas';
 import { supabase } from '@/lib/supabase';
+import { MODELO_CONTRATO_ADULTO, MODELO_CONTRATO_MENOR } from '@/lib/contrato';
 
 export type TipoModulo = 'exercicio' | 'treino' | 'nutricao' | 'venda';
 export type AlunoResumo = { id: string; nome: string; status: string; telefone?: string };
@@ -460,20 +461,24 @@ export function Configuracoes({ userId, onNomeAtualizado }: { userId: string; on
   const [nome, setNome] = useState('');
   const [telefone, setTelefone] = useState('');
   const [observacoes, setObservacoes] = useState('');
+  const [modeloContratoAdulto, setModeloContratoAdulto] = useState(MODELO_CONTRATO_ADULTO);
+  const [modeloContratoMenor, setModeloContratoMenor] = useState(MODELO_CONTRATO_MENOR);
   const [carregando, setCarregando] = useState(true);
   const [salvando, setSalvando] = useState(false);
   const [mensagem, setMensagem] = useState('');
 
   useEffect(() => {
     let ativo = true;
-    supabase.from('gestao_configuracoes').select('nome_academia,telefone,observacoes')
+    supabase.from('gestao_configuracoes').select('nome_academia,telefone,observacoes,modelo_contrato,modelo_contrato_adulto,modelo_contrato_menor')
       .eq('user_id', userId).maybeSingle().then(({ data, error }) => {
         if (!ativo) return;
-        if (error) setMensagem(`Não foi possível carregar as configurações: ${error.message}. Verifique se executou o SQL dos módulos.`);
+        if (error) setMensagem(`Não foi possível carregar as configurações: ${error.message}. Execute a migração atualizada de contratos no Supabase.`);
         else if (data) {
           setNome(data.nome_academia);
           setTelefone(formatarTelefone(data.telefone || ''));
           setObservacoes(data.observacoes || '');
+          setModeloContratoAdulto(data.modelo_contrato_adulto || data.modelo_contrato || MODELO_CONTRATO_ADULTO);
+          setModeloContratoMenor(data.modelo_contrato_menor || MODELO_CONTRATO_MENOR);
         }
         setCarregando(false);
       });
@@ -493,6 +498,9 @@ export function Configuracoes({ userId, onNomeAtualizado }: { userId: string; on
       nome_academia: nome.trim(),
       telefone: telefone ? formatarTelefone(telefone) : '',
       observacoes: observacoes.trim(),
+      modelo_contrato: modeloContratoAdulto.trim() || MODELO_CONTRATO_ADULTO,
+      modelo_contrato_adulto: modeloContratoAdulto.trim() || MODELO_CONTRATO_ADULTO,
+      modelo_contrato_menor: modeloContratoMenor.trim() || MODELO_CONTRATO_MENOR,
       atualizado_em: new Date().toISOString()
     }, { onConflict: 'user_id' });
     setSalvando(false);
@@ -502,7 +510,7 @@ export function Configuracoes({ userId, onNomeAtualizado }: { userId: string; on
 
   return <section style={caixa}>
     <h2 style={{ marginTop: 0 }}>Configurações da Academia</h2>
-    <p style={{ color: '#aeb5c6' }}>Personalize o nome mostrado no menu e guarde o contato da academia.</p>
+    <p style={{ color: '#aeb5c6' }}>Personalize os dados da academia e mantenha um modelo de contrato para adultos e outro para menores.</p>
     {mensagem && <p role="status" style={{ color: mensagem.startsWith('Configurações salvas') ? '#86efac' : '#fecaca' }}>{mensagem}</p>}
     {carregando ? <p>Carregando...</p> : <form onSubmit={salvar} style={{ display: 'grid', gap: '1rem', maxWidth: '620px' }}>
       <label style={label}>Nome da academia *
@@ -514,6 +522,23 @@ export function Configuracoes({ userId, onNomeAtualizado }: { userId: string; on
       <label style={label}>Observações internas
         <textarea style={{ ...campo, resize: 'vertical' }} rows={4} value={observacoes} maxLength={2000} onChange={(e) => setObservacoes(e.target.value)} />
       </label>
+      <section aria-labelledby="modelos-contrato-titulo" style={{ display: 'grid', gap: '1rem', padding: '1rem', border: '1px solid #454b63', borderRadius: 10, background: '#191c28' }}>
+        <div>
+          <h3 id="modelos-contrato-titulo" style={{ margin: '0 0 0.4rem', color: '#fff' }}>Modelos de contrato</h3>
+          <p style={{ margin: 0, color: '#aeb5c6' }}>Edite e salve separadamente o contrato usado para adultos e o contrato usado para menores de 18 anos. O perfil do aluno seleciona o modelo pela data de nascimento.</p>
+        </div>
+        <label style={label}>Opção 1 — Adultos (18 anos ou mais)
+          <small>Aplicado automaticamente aos alunos adultos. Os campos entre chaves são preenchidos com os dados do aluno e da academia.</small>
+          <textarea aria-label="Modelo de contrato para adultos" style={{ ...campo, resize: 'vertical', fontFamily: 'monospace', lineHeight: 1.5 }} rows={18} value={modeloContratoAdulto} maxLength={20000} onChange={(e) => setModeloContratoAdulto(e.target.value)} />
+        </label>
+        <button type="button" onClick={() => setModeloContratoAdulto(MODELO_CONTRATO_ADULTO)} style={{ ...botao, backgroundColor: '#353a4c', justifySelf: 'start' }}>Restaurar modelo adulto</button>
+        <label style={label}>Opção 2 — Menores de 18 anos
+          <small>Aplicado automaticamente conforme a data de nascimento. Inclui os campos do responsável legal.</small>
+          <textarea aria-label="Modelo de contrato para menores de idade" style={{ ...campo, resize: 'vertical', fontFamily: 'monospace', lineHeight: 1.5 }} rows={18} value={modeloContratoMenor} maxLength={20000} onChange={(e) => setModeloContratoMenor(e.target.value)} />
+        </label>
+        <button type="button" onClick={() => setModeloContratoMenor(MODELO_CONTRATO_MENOR)} style={{ ...botao, backgroundColor: '#353a4c', justifySelf: 'start' }}>Restaurar modelo de menor</button>
+        <small style={{ color: '#aeb5c6' }}>Campos automáticos: {'{{ACADEMIA}}'}, {'{{CNPJ_ACADEMIA}}'}, {'{{ENDERECO_ACADEMIA}}'}, {'{{ALUNO}}'}, {'{{IDADE}}'}, {'{{NASCIMENTO}}'}, {'{{CPF_ALUNO}}'}, {'{{TELEFONE_ALUNO}}'}, {'{{ENDERECO_ALUNO}}'}, {'{{RESPONSAVEL}}'}, {'{{CPF_RESPONSAVEL}}'}, {'{{TELEFONE_RESPONSAVEL}}'}, {'{{PARENTESCO}}'}, {'{{PAPEL_RESPONSAVEL}}'}, {'{{PLANO}}'}, {'{{MENSALIDADE}}'}, {'{{DIA_VENCIMENTO}}'}, {'{{FIM_PLANO}}'}, {'{{TEXTO_ASSISTENCIA}}'}, {'{{ASSINATURA_ALUNO}}'}, {'{{ASSINATURA_RESPONSAVEL}}'}, {'{{CIDADE}}'} e {'{{DATA}}'}.</small>
+      </section>
       <button type="submit" disabled={salvando} style={{ ...botao, backgroundColor: '#635bfc', justifySelf: 'start' }}>{salvando ? 'Salvando...' : 'Salvar configurações'}</button>
     </form>}
   </section>;

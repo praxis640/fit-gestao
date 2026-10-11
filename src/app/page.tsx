@@ -4,8 +4,9 @@
 
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
-import { adicionarDias, dataEmSaoPaulo, diasAteVencimento, situacaoPagamento, vencimentoPlano } from '@/lib/faturamento';
-import { calcularIdade, csvSeguro, dataNascimentoValida, digitosTelefone, formatarDataBrasil, formatarTelefone, telefoneValido } from '@/lib/alunos';
+import { adicionarDias, dataEmSaoPaulo, dataISOValida, diasAteVencimento, proximoVencimentoDoDia, situacaoPagamento, vencimentoPagamento, vencimentoPlano } from '@/lib/faturamento';
+import { calcularIdade, cpfValido, csvSeguro, dataNascimentoValida, digitosCpf, digitosTelefone, formatarCpf, formatarDataBrasil, formatarTelefone, telefoneValido } from '@/lib/alunos';
+import { gerarPdfRelatorioAcademia } from '@/lib/relatorio-pdf';
 import { Configuracoes, ModuloGestao, type TipoModulo } from './modulos';
 import { PlanosAlimentares } from './planos-alimentares';
 import { PerfilAluno } from './perfil-aluno';
@@ -19,6 +20,7 @@ interface Aluno {
   nome: string;
   telefone?: string;
   data_nascimento?: string | null;
+  cpf?: string | null;
   status: 'Ativo' | 'Inativo';
   plano_nome?: string;
   valor_mensalidade?: number;
@@ -27,8 +29,18 @@ interface Aluno {
   graduacao?: string;
   criado_em?: string;
   fim_plano?: string | null;
+  proximo_vencimento?: string | null;
   user_id?: string;
   academia_id?: string;
+  observacoes?: string | null;
+  foto_storage_path?: string | null;
+  endereco?: string | null;
+  contrato_responsavel_nome?: string | null;
+  contrato_responsavel_cpf?: string | null;
+  contrato_responsavel_telefone?: string | null;
+  contrato_responsavel_parentesco?: string | null;
+  contrato_texto?: string | null;
+  contrato_personalizado?: boolean;
 }
 
 interface Frequencia {
@@ -43,6 +55,7 @@ interface Plano {
   nome: string;
   duracao_dias: number;
   valor: number;
+  criado_em?: string;
   academia_id?: string;
   user_id?: string;
 }
@@ -63,6 +76,7 @@ interface VendaFinanceira {
   quantidade?: number;
   aluno_id?: string | null;
   aluno_nome?: string;
+  custo_unitario?: number | null;
 }
 
 export default function Home() {
@@ -83,8 +97,13 @@ export default function Home() {
   const [filtroPlano, setFiltroPlano] = useState('Todos');
   const [ordenacaoAlunos, setOrdenacaoAlunos] = useState<'nome' | 'cadastro' | 'vencimento'>('nome');
   const [alunoPerfilId, setAlunoPerfilId] = useState<string | null>(null);
+  const [abaPerfilInicial, setAbaPerfilInicial] = useState<'resumo' | 'sobre' | 'foto' | 'contrato'>('resumo');
 
   const [alunoSelecionadoId, setAlunoSelecionadoId] = useState<string | number | null>(null);
+  const [faixaFrequencia, setFaixaFrequencia] = useState<'semana' | 'mes' | '3meses' | '6meses' | 'ano' | 'personalizado'>('mes');
+  const [inicioFrequencia, setInicioFrequencia] = useState('');
+  const [fimFrequencia, setFimFrequencia] = useState('');
+  const [limiteRankingFrequencia, setLimiteRankingFrequencia] = useState<5 | 10 | 'todos'>(10);
   const [mesAtual, setMesAtual] = useState<Date>(new Date());
   const [mesFinanceiro, setMesFinanceiro] = useState<Date>(new Date());
   const [instanteAtual, setInstanteAtual] = useState<Date>(new Date());
@@ -93,11 +112,13 @@ export default function Home() {
   const [editandoAlunoId, setEditandoAlunoId] = useState<string | number | null>(null);
   const [nome, setNome] = useState('');
   const [telefone, setTelefone] = useState('');
+  const [cpf, setCpf] = useState('');
   const [dataNascimento, setDataNascimento] = useState('');
   const [statusAluno, setStatusAluno] = useState<'Ativo' | 'Inativo'>('Ativo');
   const [planoSelecionadoNome, setPlanoSelecionadoNome] = useState<string>('');
   const [valorMensalidade, setValorMensalidade] = useState('120.00');
   const [diaVencimento, setDiaVencimento] = useState('10');
+  const [proximoVencimento, setProximoVencimento] = useState(() => proximoVencimentoDoDia(10, dataEmSaoPaulo(new Date())));
   const [fimPlano, setFimPlano] = useState(() => adicionarDias(dataEmSaoPaulo(new Date()), 30));
   const [graduacao, setGraduacao] = useState('Iniciante');
 
@@ -105,6 +126,8 @@ export default function Home() {
   const [nomePlanoForm, setNomePlanoForm] = useState('');
   const [duracaoDiasForm, setDuracaoDiasForm] = useState<number>(30);
   const [valorTotalForm, setValorTotalForm] = useState('120.00');
+  const [gerandoPlanoPdfId, setGerandoPlanoPdfId] = useState<string | null>(null);
+  const [mensagemPlanoPdf, setMensagemPlanoPdf] = useState('');
 
   // Auth
   const [email, setEmail] = useState('');
@@ -142,6 +165,8 @@ export default function Home() {
         setTelefone('');
         setDataNascimento('');
         setStatusAluno('Ativo');
+        setDiaVencimento('10');
+        setProximoVencimento(proximoVencimentoDoDia(10, dataEmSaoPaulo(new Date())));
         setNomeAcademia('FitGestão');
       }
       setSession(novaSessao);
@@ -212,7 +237,7 @@ export default function Home() {
       .eq('user_id', userId);
     const { data: dataVendas, error: vendasError } = await supabase
       .from('gestao_vendas')
-      .select('id, valor_total, data_venda, produto_nome, categoria, quantidade, aluno_id, aluno_nome')
+      .select('id, valor_total, data_venda, produto_nome, categoria, quantidade, aluno_id, aluno_nome, custo_unitario')
       .eq('user_id', userId);
     if (usuarioAtualRef.current !== userId) return;
     if (pagamentosError || erroPlanos) {
@@ -222,7 +247,7 @@ export default function Home() {
     setPagamentos(dataPagamentos || []);
     setVendasFinanceiras((dataVendas || []) as VendaFinanceira[]);
     setErroVendasFinanceiras(vendasError
-      ? `Vendas ainda não disponíveis no Financeiro: ${vendasError.message}. Execute a migração 20260926_vendas_produtos_financeiro.sql.`
+      ? `Vendas ainda não disponíveis no Financeiro: ${vendasError.message}. Execute a migração 20261006_perfil_frequencia_lucro.sql no Supabase.`
       : null);
 
     setPlanos(dataPlanos || []);
@@ -239,7 +264,9 @@ export default function Home() {
     setPlanoSelecionadoNome(nomePlano);
     const planoEncontrado = planos.find(p => p.nome === nomePlano);
     if (planoEncontrado) {
-      const valorMensalEquivalente = (Number(planoEncontrado.valor) / (planoEncontrado.duracao_dias / 30)).toFixed(2);
+      const valorMensalEquivalente = planoEncontrado.duracao_dias === 1
+        ? Number(planoEncontrado.valor).toFixed(2)
+        : (Number(planoEncontrado.valor) / (planoEncontrado.duracao_dias / 30)).toFixed(2);
       setValorMensalidade(valorMensalEquivalente);
       setFimPlano(adicionarDias(dataEmSaoPaulo(new Date()), planoEncontrado.duracao_dias));
     }
@@ -385,7 +412,7 @@ export default function Home() {
     e.preventDefault();
     if (!session?.user?.id || !nomePlanoForm.trim()) return;
     const valorPlano = Number(valorTotalForm);
-    if (!Number.isFinite(valorPlano) || valorPlano <= 0 || ![30, 90, 180, 365].includes(duracaoDiasForm)) {
+    if (!Number.isFinite(valorPlano) || valorPlano <= 0 || ![1, 30, 90, 180, 365].includes(duracaoDiasForm)) {
       alert('Informe um valor de plano positivo e uma duração válida.');
       return;
     }
@@ -415,6 +442,110 @@ export default function Home() {
     if (error) alert('Erro ao eliminar plano: ' + error.message);
     else if (!data?.length) alert('Plano não encontrado para esta conta.');
     else await carregarDados();
+  }
+
+  function montarResumoPlano(plano: Plano) {
+    const alunosPlano = alunos.filter((aluno) => aluno.plano_nome === plano.nome);
+    const ativos = alunosPlano.filter((aluno) => aluno.status === 'Ativo');
+    const ids = new Set(alunosPlano.map((aluno) => String(aluno.id)));
+    const pagamentosPlano = pagamentos.filter((pagamento) => ids.has(String(pagamento.aluno_id)));
+    const presencasPorAluno = new Map<string, { total: number; ultima: string }>();
+    for (const frequencia of frequencias) {
+      const id = String(frequencia.aluno_id);
+      if (!ids.has(id)) continue;
+      const data = frequencia.data.slice(0, 10);
+      const registro = presencasPorAluno.get(id) || { total: 0, ultima: '' };
+      registro.total += 1;
+      if (data > registro.ultima) registro.ultima = data;
+      presencasPorAluno.set(id, registro);
+    }
+    const situacoes = { emDia: 0, pendente: 0, atrasado: 0 };
+    for (const aluno of ativos) {
+      const status = situacaoPagamento(aluno, pagosNoMes, hoje);
+      if (status === 'Em Dia') situacoes.emDia += 1;
+      else if (status === 'Pendente') situacoes.pendente += 1;
+      else situacoes.atrasado += 1;
+    }
+    const mensalidadePrevista = ativos.reduce((total, aluno) => total + Number(aluno.valor_mensalidade || 0), 0);
+    const valorRecebido = pagamentosPlano.reduce((total, pagamento) => total + Number(pagamento.valor || 0), 0);
+    const totalPresencas = [...presencasPorAluno.values()].reduce((total, registro) => total + registro.total, 0);
+    const linhasAlunos = [...alunosPlano].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR')).map((aluno) => {
+      const id = String(aluno.id);
+      const presencas = presencasPorAluno.get(id) || { total: 0, ultima: '' };
+      const pagamentosAluno = pagamentosPlano.filter((pagamento) => String(pagamento.aluno_id) === id);
+      const recebidoAluno = pagamentosAluno.reduce((total, pagamento) => total + Number(pagamento.valor || 0), 0);
+      const statusPagamento = aluno.status === 'Ativo' ? situacaoPagamento(aluno, pagosNoMes, hoje) : '— (matrícula inativa)';
+      const rotuloValor = plano.duracao_dias === 1 ? 'Valor do teste' : 'Mensalidade';
+      return `${aluno.nome} | Matrícula: ${aluno.status} | Pagamento atual: ${statusPagamento} | ${rotuloValor}: R$ ${Number(aluno.valor_mensalidade || 0).toFixed(2)} | Próximo vencimento: ${formatarDataBrasil(vencimentoPagamento(aluno, hoje))} | Plano válido até: ${formatarDataBrasil(vencimentoPlano(aluno, planos, hoje))} | Presenças registradas: ${presencas.total} | Última presença: ${formatarDataBrasil(presencas.ultima)} | Pagamentos registrados: ${pagamentosAluno.length} (R$ ${recebidoAluno.toFixed(2)})`;
+    });
+    return {
+      alunosPlano,
+      ativos,
+      situacoes,
+      mensalidadePrevista,
+      valorRecebido,
+      quantidadePagamentos: pagamentosPlano.length,
+      totalPresencas,
+      alunosComPresenca: presencasPorAluno.size,
+      linhasAlunos
+    };
+  }
+
+  async function baixarRelatorioPlano(plano: Plano) {
+    const chave = String(plano.id ?? plano.nome);
+    setGerandoPlanoPdfId(chave);
+    setMensagemPlanoPdf('');
+    try {
+      const resumo = montarResumoPlano(plano);
+      const equivalenteMensal = Number(plano.valor) / (Number(plano.duracao_dias) / 30);
+      const pdf = gerarPdfRelatorioAcademia({
+        academia: `${nomeAcademia} · Plano ${plano.nome}`,
+        periodo: `Histórico cadastrado até ${formatarDataBrasil(hoje)}`,
+        emitidoEm: formatarDataBrasil(hoje),
+        indicadores: [
+          { titulo: 'Alunos ativos', valor: String(resumo.ativos.length), detalhe: `${resumo.alunosPlano.length - resumo.ativos.length} inativo(s)`, cor: '#635bfc' },
+          { titulo: plano.duracao_dias === 1 ? 'Valor dos testes ativos' : 'Mensalidade prevista', valor: `R$ ${resumo.mensalidadePrevista.toFixed(2)}`, detalhe: plano.duracao_dias === 1 ? 'valor informado no cadastro' : 'soma dos ativos', cor: '#0d9ca6' },
+          { titulo: 'Pagamentos registrados', valor: `R$ ${resumo.valorRecebido.toFixed(2)}`, detalhe: `${resumo.quantidadePagamentos} lançamento(s)`, cor: '#15a77a' },
+          { titulo: 'Presenças', valor: String(resumo.totalPresencas), detalhe: `${resumo.alunosComPresenca} aluno(s)`, cor: '#d89417' }
+        ],
+        secoes: [
+          { titulo: 'Dados do plano', linhas: [
+            `Plano: ${plano.nome}.`,
+            plano.duracao_dias === 1
+              ? `Duração: 1 dia (plano de teste). Valor total: R$ ${Number(plano.valor).toFixed(2)}. Não é aplicada equivalência mensal para este plano.`
+              : `Duração: ${plano.duracao_dias} dias. Valor total: R$ ${Number(plano.valor).toFixed(2)}. Equivalente mensal estimado: R$ ${equivalenteMensal.toFixed(2)}.`,
+            `Criado em: ${formatarDataBrasil(plano.criado_em)}. Alunos vinculados pelo nome do plano cadastrado no perfil: ${resumo.alunosPlano.length}.`
+          ] },
+          { titulo: 'Situação dos alunos ativos', linhas: [
+            `${resumo.situacoes.emDia} em dia, ${resumo.situacoes.pendente} pendente(s) e ${resumo.situacoes.atrasado} atrasado(s) neste mês.`,
+            `${plano.duracao_dias === 1 ? 'Valor informado dos alunos ativos' : 'Valor mensal previsto dos alunos ativos'}: R$ ${resumo.mensalidadePrevista.toFixed(2)}. Valor contratado total pelo preço do plano: R$ ${(resumo.ativos.length * Number(plano.valor)).toFixed(2)}.`
+          ] },
+          { titulo: 'Frequência e pagamentos', linhas: [
+            `${resumo.totalPresencas} presença(s) encontradas no histórico; ${resumo.alunosComPresenca} aluno(s) tiveram ao menos uma presença.`,
+            `Pagamentos registrados de todos os alunos vinculados: R$ ${resumo.valorRecebido.toFixed(2)}. Os pagamentos são somados conforme os lançamentos existentes no sistema.`
+          ] },
+          { titulo: 'Detalhamento dos alunos', linhas: resumo.linhasAlunos.length ? resumo.linhasAlunos : ['Nenhum aluno está vinculado a este plano.'] },
+          { titulo: 'Critérios do relatório', linhas: [
+            'Os alunos são associados ao plano pelo nome salvo no campo plano do cadastro. Pagamento atual é calculado com base no vencimento e nos pagamentos registrados para o mês de emissão.',
+            'O relatório consolida os dados cadastrados no FitGestão até a data de emissão; informações ausentes nos cadastros aparecem como traço ou zero.'
+          ] }
+        ]
+      });
+      const url = URL.createObjectURL(new Blob([new Uint8Array(pdf)], { type: 'application/pdf' }));
+      const link = document.createElement('a');
+      const slug = plano.nome.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase();
+      link.href = url;
+      link.download = `relatorio-plano-${slug || 'academia'}-${hoje}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1500);
+      setMensagemPlanoPdf(`Relatório do plano ${plano.nome} baixado em PDF.`);
+    } catch (error) {
+      setMensagemPlanoPdf(error instanceof Error ? `Falha ao gerar o PDF: ${error.message}` : 'Falha ao gerar o relatório em PDF.');
+    } finally {
+      setGerandoPlanoPdfId(null);
+    }
   }
 
   const diasDoMes = useMemo(() => {
@@ -451,8 +582,57 @@ export default function Home() {
     );
   }, [frequencias, alunoSelecionadoId]);
 
+  const intervaloFrequencia = useMemo(() => {
+    const fim = faixaFrequencia === 'personalizado' ? (fimFrequencia || hoje) : hoje;
+    if (faixaFrequencia === 'personalizado') return { inicio: inicioFrequencia || fim, fim };
+    if (faixaFrequencia === 'ano') return { inicio: `${hoje.slice(0, 4)}-01-01`, fim };
+    const dias = faixaFrequencia === 'semana' ? 7 : faixaFrequencia === 'mes' ? 30 : faixaFrequencia === '3meses' ? 90 : 180;
+    const inicio = new Date(`${hoje}T12:00:00`);
+    inicio.setDate(inicio.getDate() - dias + 1);
+    return { inicio: dataEmSaoPaulo(inicio), fim };
+  }, [faixaFrequencia, inicioFrequencia, fimFrequencia, hoje]);
+  const frequenciasAlunoSelecionado = useMemo(() => frequencias.filter((f) => String(f.aluno_id) === String(alunoSelecionadoId)), [frequencias, alunoSelecionadoId]);
+  const frequenciasNoPeriodo = frequenciasAlunoSelecionado.filter((f) => f.data >= intervaloFrequencia.inicio && f.data <= intervaloFrequencia.fim);
+  const rankingFrequencia = useMemo(() => {
+    const contagemPorAluno = new Map<string, number>();
+    for (const frequencia of frequencias) {
+      const data = frequencia.data?.slice(0, 10);
+      if (!data || data < intervaloFrequencia.inicio || data > intervaloFrequencia.fim) continue;
+      const alunoId = String(frequencia.aluno_id);
+      contagemPorAluno.set(alunoId, (contagemPorAluno.get(alunoId) || 0) + 1);
+    }
+    return alunos
+      .filter((aluno) => aluno.id != null)
+      .map((aluno) => ({ id: String(aluno.id), nome: aluno.nome, total: contagemPorAluno.get(String(aluno.id)) || 0 }))
+      .filter((aluno) => aluno.total > 0)
+      .sort((a, b) => b.total - a.total || a.nome.localeCompare(b.nome, 'pt-BR'));
+  }, [alunos, frequencias, intervaloFrequencia]);
+  const rankingFrequenciaExibido = limiteRankingFrequencia === 'todos'
+    ? rankingFrequencia
+    : rankingFrequencia.slice(0, limiteRankingFrequencia);
+  const barrasFrequencia = useMemo(() => {
+    const inicio = Date.parse(`${intervaloFrequencia.inicio}T00:00:00Z`);
+    const fim = Date.parse(`${intervaloFrequencia.fim}T00:00:00Z`);
+    const totalDias = Math.max(1, Math.ceil((fim - inicio + 86400000) / 86400000));
+    const tamanhoGrupoDias = Math.max(1, Math.ceil(totalDias / 12));
+    const grupos = new Map<number, { total: number; inicio: string }>();
+    const totalGrupos = Math.ceil(totalDias / tamanhoGrupoDias);
+    for (let indice = 0; indice < totalGrupos; indice += 1) {
+      grupos.set(indice, { total: 0, inicio: new Date(inicio + indice * tamanhoGrupoDias * 86400000).toISOString().slice(0, 10) });
+    }
+    for (const presenca of frequenciasNoPeriodo) {
+      const indice = Math.floor((Date.parse(`${presenca.data}T00:00:00Z`) - inicio) / 86400000 / tamanhoGrupoDias);
+      const grupo = grupos.get(indice);
+      if (!grupo) continue;
+      grupo.total += 1;
+      grupos.set(indice, grupo);
+    }
+    return [...grupos.entries()].sort((a, b) => a[0] - b[0]).slice(-12).map(([indice, grupo]) => ({ ...grupo, key: indice }));
+  }, [frequenciasNoPeriodo, intervaloFrequencia]);
+  const maxBarraFrequencia = Math.max(1, ...barrasFrequencia.map((barra) => barra.total));
+
   function baixarAlunosCSV() {
-    const cabecalho = ['Nome', 'Telefone', 'Nascimento', 'Idade', 'Matrícula', 'Plano', 'Mensalidade (R$)', 'Pagamento neste mês', 'Plano válido até'];
+    const cabecalho = ['Nome', 'Telefone', 'Nascimento', 'Idade', 'Matrícula', 'Plano', 'Mensalidade (R$)', 'Pagamento neste mês', 'Próximo vencimento', 'Plano válido até'];
     const linhas = alunosFiltrados.map((aluno) => [
       aluno.nome,
       aluno.telefone || '',
@@ -462,6 +642,7 @@ export default function Home() {
       aluno.plano_nome || '',
       Number(aluno.valor_mensalidade || 0).toFixed(2).replace('.', ','),
       situacaoPagamento(aluno, pagosNoMes, hoje),
+      aluno.proximo_vencimento || vencimentoPagamento(aluno, hoje),
       aluno.fim_plano || ''
     ]);
     const conteudo = '\uFEFF' + [cabecalho, ...linhas].map((linha) => linha.map(csvSeguro).join(';')).join('\r\n');
@@ -491,9 +672,15 @@ export default function Home() {
 
   async function handleSalvarAluno(e: React.FormEvent) {
     e.preventDefault();
+    const submitter = (e.nativeEvent as SubmitEvent).submitter;
+    const abrirContrato = submitter instanceof HTMLButtonElement && submitter.dataset.acao === 'contrato';
     if (!session?.user?.id || !nome.trim() || !planoSelecionadoNome) return;
     if (telefone && !telefoneValido(telefone)) {
       alert('Informe um telefone com DDD e 10 ou 11 dígitos, ou deixe o campo vazio.');
+      return;
+    }
+    if (cpf && !cpfValido(cpf)) {
+      alert('Informe um CPF válido com 11 dígitos, ou deixe o campo vazio.');
       return;
     }
     if (dataNascimento && !dataNascimentoValida(dataNascimento, hoje)) {
@@ -504,8 +691,8 @@ export default function Home() {
     const vencimento = Number(diaVencimento);
     if (!Number.isFinite(mensalidade) || mensalidade <= 0 ||
         !Number.isInteger(vencimento) || vencimento < 1 || vencimento > 31 ||
-        !/^\d{4}-\d{2}-\d{2}$/.test(fimPlano)) {
-      alert('Informe mensalidade positiva, vencimento entre 1 e 31 e uma data válida para o fim do plano.');
+        !dataISOValida(fimPlano) || !dataISOValida(proximoVencimento)) {
+      alert('Informe mensalidade positiva, dia de vencimento entre 1 e 31 e datas válidas para o próximo vencimento e o fim do plano.');
       return;
     }
 
@@ -514,11 +701,16 @@ export default function Home() {
     const dadosAluno = {
       nome: nome.trim(),
       telefone: telefone ? formatarTelefone(telefone) : null,
+      cpf: cpf ? digitosCpf(cpf) : null,
       data_nascimento: dataNascimento || null,
       status: statusAluno,
       plano_nome: planoSelecionadoNome,
       valor_mensalidade: mensalidade,
       dia_vencimento: vencimento,
+      proximo_vencimento: proximoVencimento,
+      status_pagamento: pagosNoMes.has(String(editandoAlunoId ?? ''))
+        ? 'Em Dia' as const
+        : proximoVencimento < hoje ? 'Atrasado' as const : proximoVencimento === hoje ? 'Pendente' as const : 'Em Dia' as const,
       fim_plano: fimPlano,
       graduacao,
       user_id: session.user.id,
@@ -532,18 +724,32 @@ export default function Home() {
       if (error) alert('Erro ao atualizar: ' + error.message);
       else if (!data?.length) alert('Aluno não encontrado para esta conta.');
       else {
+        const alunoId = String(data[0].id);
         alert('Aluno atualizado com sucesso!');
         setEditandoAlunoId(null);
         limparFormularioAluno();
-        carregarDados();
+        if (abrirContrato) {
+          setAlunoPerfilId(alunoId);
+          setAbaPerfilInicial('contrato');
+          setAbaAtiva('Usuarios');
+        }
+        await carregarDados();
+        if (abrirContrato) requestAnimationFrame(() => document.getElementById('perfil-aluno')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
       }
     } else {
-      const { error } = await supabase.from('alunos').insert([{ ...dadosAluno, status_pagamento: 'Pendente' }]);
+      const { data, error } = await supabase.from('alunos').insert([dadosAluno]).select('id').single();
       setCarregando(false);
       if (error) alert('Erro ao cadastrar: ' + error.message);
       else {
+        const alunoId = String(data.id);
         limparFormularioAluno();
-        carregarDados();
+        if (abrirContrato) {
+          setAlunoPerfilId(alunoId);
+          setAbaPerfilInicial('contrato');
+          setAbaAtiva('Usuarios');
+        }
+        await carregarDados();
+        if (abrirContrato) requestAnimationFrame(() => document.getElementById('perfil-aluno')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
       }
     }
   }
@@ -551,11 +757,13 @@ export default function Home() {
   function limparFormularioAluno() {
     setNome('');
     setTelefone('');
+    setCpf('');
     setDataNascimento('');
     setStatusAluno('Ativo');
     setPlanoSelecionadoNome('');
     setValorMensalidade('120.00');
     setDiaVencimento('10');
+    setProximoVencimento(proximoVencimentoDoDia(10, dataEmSaoPaulo(new Date())));
     setGraduacao('Iniciante');
     setFimPlano(adicionarDias(dataEmSaoPaulo(new Date()), 30));
     setEditandoAlunoId(null);
@@ -565,11 +773,13 @@ export default function Home() {
     setEditandoAlunoId(aluno.id || null);
     setNome(aluno.nome);
     setTelefone(formatarTelefone(aluno.telefone || ''));
+    setCpf(formatarCpf(aluno.cpf || ''));
     setDataNascimento(aluno.data_nascimento || '');
     setStatusAluno(aluno.status || 'Ativo');
     setPlanoSelecionadoNome(aluno.plano_nome || 'Plano Mensal');
     setValorMensalidade(String(aluno.valor_mensalidade || 120));
     setDiaVencimento(String(aluno.dia_vencimento || 10));
+    setProximoVencimento(aluno.proximo_vencimento?.slice(0, 10) || vencimentoPagamento(aluno, hoje));
     setFimPlano(aluno.fim_plano || adicionarDias(
       aluno.criado_em ? dataEmSaoPaulo(new Date(aluno.criado_em)) : dataEmSaoPaulo(new Date()),
       planos.find(p => p.nome === aluno.plano_nome)?.duracao_dias || 30
@@ -647,7 +857,6 @@ export default function Home() {
           <h2 className="fit-brand" style={{ color: '#fff', fontSize: '1.3rem', marginBottom: '1.2rem', paddingLeft: '0.8rem', overflowWrap: 'anywhere' }}>{nomeAcademia}</h2>
           <button type="button" className="fit-signout-mobile" onClick={() => supabase.auth.signOut()}>Sair</button>
         </div>
-        
         <nav className="fit-nav" aria-label="Navegação principal">
         {menuItens.map((item) => {
           const estaAtivo = abaAtiva === item.nome;
@@ -655,6 +864,7 @@ export default function Home() {
             <button
               key={item.nome}
               type="button"
+              aria-current={estaAtivo ? 'page' : undefined}
               onClick={() => setAbaAtiva(item.nome)}
               style={{
                 display: 'flex',
@@ -682,7 +892,7 @@ export default function Home() {
         </nav>
 
         <div className="fit-sidebar-footer" style={{ marginTop: 'auto', paddingTop: '1rem', borderTop: '1px solid #24283b' }}>
-          <button type="button" onClick={() => supabase.auth.signOut()} style={{ width: '100%', padding: '0.6rem', borderRadius: '6px', border: '1px solid #3a3f55', backgroundColor: 'transparent', color: '#ff5c5c', cursor: 'pointer', fontSize: '0.85rem' }}>
+          <button onClick={() => supabase.auth.signOut()} style={{ width: '100%', padding: '0.6rem', borderRadius: '6px', border: '1px solid #3a3f55', backgroundColor: 'transparent', color: '#ff5c5c', cursor: 'pointer', fontSize: '0.85rem' }}>
             Sair
           </button>
         </div>
@@ -742,8 +952,8 @@ export default function Home() {
                 <div className="dashboard-card-heading"><div><span className="dashboard-eyebrow">ACOMPANHAMENTO</span><h3>Planos que pedem atenção</h3></div><button type="button" onClick={() => setAbaAtiva('Usuarios')}>Ver alunos →</button></div>
                 <div className="dashboard-plan-summary"><span className={planosVencidos.length ? 'dashboard-status-bad' : 'dashboard-status-good'}>{planosVencidos.length} vencidos</span><span className={planosVencendo.length ? 'dashboard-status-warn' : 'dashboard-status-good'}>{planosVencendo.length} vencendo em 7 dias</span></div>
                 <div className="dashboard-plan-lists">
-                  <div><h4>Vencidos</h4>{planosVencidos.length ? planosVencidos.slice(0, 3).map(({ aluno, vencimento }) => <button type="button" className="dashboard-plan-row" key={`vencido-${aluno.id}`} onClick={() => { setAlunoPerfilId(String(aluno.id)); setAbaAtiva('Usuarios'); }}><span>{aluno.nome}<small>Venceu em {formatarDataBrasil(vencimento)}</small></span><b>Ver</b></button>) : <p className="dashboard-empty">Nenhum plano vencido.</p>}</div>
-                  <div><h4>Próximos 7 dias</h4>{planosVencendo.length ? planosVencendo.slice(0, 3).map(({ aluno, vencimento, dias }) => <button type="button" className="dashboard-plan-row" key={`vencendo-${aluno.id}`} onClick={() => { setAlunoPerfilId(String(aluno.id)); setAbaAtiva('Usuarios'); }}><span>{aluno.nome}<small>{dias === 0 ? 'Vence hoje' : `Vence em ${formatarDataBrasil(vencimento)}`}</small></span><b>Ver</b></button>) : <p className="dashboard-empty">Nenhum vencimento próximo.</p>}</div>
+                  <div><h4>Vencidos</h4>{planosVencidos.length ? planosVencidos.slice(0, 3).map(({ aluno, vencimento }) => <button type="button" className="dashboard-plan-row" key={`vencido-${aluno.id}`} onClick={() => { setAbaPerfilInicial('resumo'); setAlunoPerfilId(String(aluno.id)); setAbaAtiva('Usuarios'); }}><span>{aluno.nome}<small>Venceu em {formatarDataBrasil(vencimento)}</small></span><b>Ver</b></button>) : <p className="dashboard-empty">Nenhum plano vencido.</p>}</div>
+                  <div><h4>Próximos 7 dias</h4>{planosVencendo.length ? planosVencendo.slice(0, 3).map(({ aluno, vencimento, dias }) => <button type="button" className="dashboard-plan-row" key={`vencendo-${aluno.id}`} onClick={() => { setAbaPerfilInicial('resumo'); setAlunoPerfilId(String(aluno.id)); setAbaAtiva('Usuarios'); }}><span>{aluno.nome}<small>{dias === 0 ? 'Vence hoje' : `Vence em ${formatarDataBrasil(vencimento)}`}</small></span><b>Ver</b></button>) : <p className="dashboard-empty">Nenhum vencimento próximo.</p>}</div>
                 </div>
               </article>
             </section>
@@ -802,6 +1012,7 @@ export default function Home() {
                   onChange={(e) => setDuracaoDiasForm(Number(e.target.value))}
                   style={{ padding: '0.6rem', borderRadius: '6px', border: '1px solid #2a2f42', backgroundColor: '#13151f', color: '#fff' }}
                 >
+                  <option value={1}>1 dia (aluno teste)</option>
                   <option value={30}>30 dias</option>
                   <option value={90}>90 dias</option>
                   <option value={180}>180 dias</option>
@@ -829,11 +1040,14 @@ export default function Home() {
               </form>
             </div>
 
+            {mensagemPlanoPdf && <p role="status" style={{ margin: 0, color: mensagemPlanoPdf.startsWith('Falha') ? '#fecaca' : '#86efac' }}>{mensagemPlanoPdf}</p>}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.5rem' }}>
               {planos.map((plano) => {
                 const equivalenteMensal = (Number(plano.valor) / (plano.duracao_dias / 30)).toFixed(2);
+                const resumo = montarResumoPlano(plano);
+                const chavePlano = String(plano.id ?? plano.nome);
                 return (
-                  <div key={plano.id} style={{ backgroundColor: '#1e2230', padding: '1.5rem', borderRadius: '12px', border: '1px solid #2a2f42', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '1rem' }}>
+                  <div key={plano.id ?? plano.nome} style={{ backgroundColor: '#1e2230', padding: '1.5rem', borderRadius: '12px', border: '1px solid #2a2f42', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '1rem' }}>
                     <div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <h4 style={{ margin: 0, fontSize: '1.1rem', color: '#fff' }}>{plano.nome}</h4>
@@ -848,9 +1062,19 @@ export default function Home() {
                         R$ {Number(plano.valor).toFixed(2)}
                       </h2>
                       <span style={{ fontSize: '0.8rem', color: '#8a8f9d' }}>
-                        Equivalente a R$ {equivalenteMensal} / mês
+                        {plano.duracao_dias === 1 ? 'Plano de teste · duração de 1 dia' : `Equivalente a R$ ${equivalenteMensal} / mês`}
                       </span>
                     </div>
+
+                    <div style={{ display: 'grid', gap: '0.35rem', color: '#aeb5c6', fontSize: '0.82rem' }}>
+                      <span>Alunos vinculados: <strong style={{ color: '#fff' }}>{resumo.alunosPlano.length}</strong> ({resumo.ativos.length} ativos)</span>
+                      <span>Pagamento atual: {resumo.situacoes.emDia} em dia · {resumo.situacoes.pendente} pendentes · {resumo.situacoes.atrasado} atrasados</span>
+                      <span>Presenças registradas: {resumo.totalPresencas} · Recebido no histórico: R$ {resumo.valorRecebido.toFixed(2)}</span>
+                    </div>
+
+                    <button type="button" onClick={() => void baixarRelatorioPlano(plano)} disabled={gerandoPlanoPdfId !== null} style={{ padding: '0.65rem 0.8rem', backgroundColor: '#635bfc', border: 0, borderRadius: 6, color: '#fff', cursor: gerandoPlanoPdfId !== null ? 'wait' : 'pointer', fontWeight: 600 }}>
+                      {gerandoPlanoPdfId === chavePlano ? 'Gerando PDF…' : '⇩ Baixar relatório detalhado em PDF'}
+                    </button>
 
                     <button
                       onClick={() => handleEliminarPlano(plano.id)}
@@ -894,6 +1118,87 @@ export default function Home() {
                 )}
               </div>
             </div>
+
+            <section style={{ backgroundColor: '#1e2230', padding: '1.3rem 1.5rem', borderRadius: '12px', border: '1px solid #2a2f42' }}>
+              <div style={{ display: 'flex', gap: '0.8rem', alignItems: 'end', justifyContent: 'space-between', flexWrap: 'wrap' }}>
+                <div><h3 style={{ margin: '0 0 0.35rem' }}>Frequência ao longo do tempo</h3><p style={{ margin: 0, color: '#aeb5c6' }}>Compare a participação do aluno em diferentes períodos.</p></div>
+                <label style={{ display: 'grid', gap: '0.3rem', color: '#aeb5c6', fontSize: '0.85rem' }}>Período
+                  <select value={faixaFrequencia} onChange={(e) => setFaixaFrequencia(e.target.value as typeof faixaFrequencia)} style={{ padding: '0.6rem', borderRadius: 6, border: '1px solid #3a3f55', background: '#13151f', color: '#fff' }}>
+                    <option value="semana">Última semana</option><option value="mes">Último mês</option><option value="3meses">Últimos 3 meses</option><option value="6meses">Últimos 6 meses</option><option value="ano">Este ano</option><option value="personalizado">Escolher datas</option>
+                  </select>
+                </label>
+                {faixaFrequencia === 'personalizado' && <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap' }}>
+                  <label style={{ display: 'grid', gap: '0.3rem', color: '#aeb5c6', fontSize: '0.85rem' }}>De <input type="date" value={inicioFrequencia} max={fimFrequencia || hoje} onChange={(e) => setInicioFrequencia(e.target.value)} style={{ padding: '0.55rem', background: '#13151f', color: '#fff', border: '1px solid #3a3f55', borderRadius: 6 }} /></label>
+                  <label style={{ display: 'grid', gap: '0.3rem', color: '#aeb5c6', fontSize: '0.85rem' }}>Até <input type="date" value={fimFrequencia || hoje} min={inicioFrequencia || undefined} max={hoje} onChange={(e) => setFimFrequencia(e.target.value)} style={{ padding: '0.55rem', background: '#13151f', color: '#fff', border: '1px solid #3a3f55', borderRadius: 6 }} /></label>
+                </div>}
+                <div style={{ padding: '0.65rem 1rem', background: '#13151f', borderRadius: 8, color: '#aeb5c6' }}><small>Presenças no intervalo</small><div style={{ fontSize: '1.35rem', color: '#4ade80', fontWeight: 700 }}>{frequenciasNoPeriodo.length} <span style={{ fontSize: '0.85rem', color: '#aeb5c6', fontWeight: 400 }}>/ {frequenciasAlunoSelecionado.length} no total</span></div></div>
+              </div>
+              <div style={{ marginTop: '0.9rem', color: '#aeb5c6', fontSize: '0.85rem' }}>De {formatarDataBrasil(intervaloFrequencia.inicio)} até {formatarDataBrasil(intervaloFrequencia.fim)} · Última presença: {formatarDataBrasil([...frequenciasAlunoSelecionado].sort((a, b) => b.data.localeCompare(a.data))[0]?.data)}</div>
+              <div style={{ display: 'flex', gap: '0.45rem', alignItems: 'end', height: 110, marginTop: '0.8rem', padding: '0.35rem 0' }} aria-label="Presenças por período">
+                {barrasFrequencia.map((barra) => <div key={barra.key} title={`${formatarDataBrasil(barra.inicio)} · ${barra.total} presença(s)`} style={{ flex: 1, minWidth: 12, height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'end', alignItems: 'center', gap: 4 }}><small style={{ color: '#aeb5c6', fontSize: '0.7rem' }}>{barra.total}</small><span style={{ display: 'block', width: '100%', height: `${Math.max(8, barra.total / maxBarraFrequencia * 72)}px`, borderRadius: '4px 4px 0 0', background: '#22c55e' }} /><small style={{ color: '#aeb5c6', fontSize: '0.65rem' }}>{formatarDataBrasil(barra.inicio).slice(0, 5)}</small></div>)}
+                {frequenciasNoPeriodo.length === 0 && <span style={{ color: '#aeb5c6' }}>Nenhuma presença registrada neste período.</span>}
+              </div>
+            </section>
+
+            <section aria-labelledby="ranking-frequencia-titulo" style={{ backgroundColor: '#1e2230', padding: '1.3rem 1.5rem', borderRadius: '12px', border: '1px solid #2a2f42' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.8rem', marginBottom: '1rem' }}>
+                <div>
+                  <h3 id="ranking-frequencia-titulo" style={{ margin: '0 0 0.3rem' }}>🏆 Ranking de frequência</h3>
+                  <p style={{ margin: 0, color: '#aeb5c6', fontSize: '0.85rem' }}>
+                    Alunos com mais presenças de {formatarDataBrasil(intervaloFrequencia.inicio)} até {formatarDataBrasil(intervaloFrequencia.fim)}.
+                  </p>
+                </div>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#aeb5c6', fontSize: '0.85rem' }}>
+                  Mostrar
+                  <select aria-label="Quantidade de alunos no ranking" value={limiteRankingFrequencia} onChange={(e) => {
+                    const valor = e.target.value;
+                    setLimiteRankingFrequencia(valor === 'todos' ? 'todos' : Number(valor) as 5 | 10);
+                  }} style={{ padding: '0.55rem', borderRadius: 6, border: '1px solid #3a3f55', background: '#13151f', color: '#fff' }}>
+                    <option value={5}>Top 5</option>
+                    <option value={10}>Top 10</option>
+                    <option value="todos">Todos</option>
+                  </select>
+                </label>
+              </div>
+              <p style={{ margin: '0 0 0.8rem', color: '#aeb5c6', fontSize: '0.8rem' }}>
+                {rankingFrequencia.length} {rankingFrequencia.length === 1 ? 'aluno com presença' : 'alunos com presença'} no período selecionado.
+              </p>
+              {rankingFrequencia.length === 0 ? (
+                <p style={{ margin: 0, padding: '1rem', textAlign: 'center', color: '#aeb5c6', background: '#13151f', borderRadius: 8 }}>
+                  Nenhuma presença registrada no período escolhido.
+                </p>
+              ) : (
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', minWidth: 440, borderCollapse: 'collapse', textAlign: 'left' }}>
+                    <thead>
+                      <tr style={{ color: '#aeb5c6', fontSize: '0.8rem' }}>
+                        <th scope="col" style={{ padding: '0.65rem', width: 80 }}>Posição</th>
+                        <th scope="col" style={{ padding: '0.65rem' }}>Aluno</th>
+                        <th scope="col" style={{ padding: '0.65rem', width: '42%' }}>Presenças</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rankingFrequenciaExibido.map((aluno, indice) => (
+                        <tr key={aluno.id} style={{ borderTop: '1px solid #2a2f42' }}>
+                          <td style={{ padding: '0.7rem 0.65rem', color: indice < 3 ? '#fbbf24' : '#aeb5c6', fontWeight: 700 }}>
+                            {indice === 0 ? '🥇 1º' : indice === 1 ? '🥈 2º' : indice === 2 ? '🥉 3º' : `${indice + 1}º`}
+                          </td>
+                          <td style={{ padding: '0.7rem 0.65rem', color: '#fff', fontWeight: 600 }}>{aluno.nome}</td>
+                          <td style={{ padding: '0.7rem 0.65rem' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                              <strong style={{ color: '#4ade80', minWidth: 24 }}>{aluno.total}</strong>
+                              <span aria-hidden="true" style={{ display: 'block', flex: 1, height: 7, minWidth: 50, borderRadius: 99, background: '#2a2f42', overflow: 'hidden' }}>
+                                <span style={{ display: 'block', width: `${Math.max(6, (aluno.total / rankingFrequencia[0].total) * 100)}%`, height: '100%', borderRadius: 99, background: '#22c55e' }} />
+                              </span>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
 
             <div style={{ backgroundColor: '#1e2230', padding: '1.5rem', borderRadius: '12px', border: '1px solid #2a2f42' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
@@ -982,6 +1287,9 @@ export default function Home() {
                     <label className="aluno-field">Telefone com DDD
                       <input className="aluno-control" type="tel" inputMode="numeric" autoComplete="tel-national" placeholder="(54)99999-9999" value={telefone} onChange={(e) => setTelefone(formatarTelefone(e.target.value))} />
                     </label>
+                    <label className="aluno-field">CPF
+                      <input className="aluno-control" type="text" inputMode="numeric" autoComplete="off" placeholder="000.000.000-00 (opcional)" value={cpf} onChange={(e) => setCpf(formatarCpf(e.target.value))} maxLength={14} />
+                    </label>
                     <label className="aluno-field">Data de nascimento
                       <input className="aluno-control" type="date" value={dataNascimento} max={hoje} onChange={(e) => setDataNascimento(e.target.value)} />
                       {calcularIdade(dataNascimento, hoje) !== null && <small>Idade atual: {calcularIdade(dataNascimento, hoje)} anos</small>}
@@ -1009,7 +1317,14 @@ export default function Home() {
                       <input className="aluno-control" type="number" min="0.01" step="0.01" value={valorMensalidade} onChange={(e) => setValorMensalidade(e.target.value)} required />
                     </label>
                     <label className="aluno-field">Dia do vencimento *
-                      <input className="aluno-control" type="number" min="1" max="31" step="1" value={diaVencimento} onChange={(e) => setDiaVencimento(e.target.value)} required />
+                      <input className="aluno-control" type="number" min="1" max="31" step="1" value={diaVencimento} onChange={(e) => {
+                        const valor = e.target.value;
+                        setDiaVencimento(valor);
+                        if (Number(valor) >= 1 && Number(valor) <= 31) setProximoVencimento(proximoVencimentoDoDia(Number(valor), hoje));
+                      }} required />
+                    </label>
+                    <label className="aluno-field">Próximo vencimento *
+                      <input className="aluno-control" type="date" value={proximoVencimento} onChange={(e) => setProximoVencimento(e.target.value)} required />
                     </label>
                     <label className="aluno-field">Nível / faixa
                       <input className="aluno-control" type="text" value={graduacao} onChange={(e) => setGraduacao(e.target.value)} maxLength={80} placeholder="Ex.: Iniciante" />
@@ -1018,15 +1333,20 @@ export default function Home() {
                       <input className="aluno-control" type="date" value={fimPlano} onChange={(e) => setFimPlano(e.target.value)} required />
                     </label>
                   </div>
-                  <small style={{ color: '#aeb5c6' }}>Adesão define a validade do plano. Se o pagamento já foi recebido, use “Baixa” na lista para registrá-lo.</small>
+                  <small style={{ color: '#aeb5c6' }}>O próximo vencimento define se a mensalidade está em dia, pendente hoje ou atrasada. A validade do plano é controlada separadamente. Se o pagamento já foi recebido, use “Baixa” para registrá-lo.</small>
                 </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem' }}>
                 <button type="submit" disabled={carregando} className="aluno-submit" style={{ backgroundColor: editandoAlunoId ? '#22c55e' : '#635bfc' }}>
                   {carregando ? 'Salvando...' : editandoAlunoId ? 'Guardar Alterações do Aluno' : 'Cadastrar Aluno'}
                 </button>
+                <button type="submit" data-acao="contrato" disabled={carregando} className="aluno-submit" style={{ backgroundColor: '#334155', border: '1px solid #64748b' }}>
+                  {carregando ? 'Salvando...' : 'Salvar e abrir contrato'}
+                </button>
+                </div>
               </form>
             </div>
 
-            {alunoDoPerfil && <div id="perfil-aluno"><PerfilAluno aluno={alunoDoPerfil} hoje={hoje} pagamentos={pagamentos} frequencias={frequencias}
+            {alunoDoPerfil && session && <div id="perfil-aluno"><PerfilAluno key={`${alunoDoPerfil.id}-${abaPerfilInicial}`} abaInicial={abaPerfilInicial} userId={session.user.id} academia={nomeAcademia} aluno={alunoDoPerfil} hoje={hoje} pagamentos={pagamentos} frequencias={frequencias} onAtualizar={carregarDados}
               situacao={situacaoPagamento(alunoDoPerfil, pagosNoMes, hoje)} diasRestantes={calcularDiasRestantes(alunoDoPerfil)}
               onEditar={() => { prepararEdicaoAluno(alunoDoPerfil); document.getElementById('cadastro-aluno')?.scrollIntoView({ behavior: 'smooth' }); }}
               onFechar={() => setAlunoPerfilId(null)} /></div>}
@@ -1072,7 +1392,7 @@ export default function Home() {
                     <th style={{ padding: '0.8rem' }}>CONTAGEM REGRESSIVA</th>
                     <th style={{ padding: '0.8rem' }}>ÚLTIMA PRESENÇA</th>
                     <th style={{ padding: '0.8rem' }}>VALOR</th>
-                    <th style={{ padding: '0.8rem' }} title="Adesão sem baixa fica pendente; só a baixa registra o pagamento recebido.">PAGAMENTO</th>
+                    <th style={{ padding: '0.8rem' }} title="O status segue a data do próximo vencimento; use Baixa para registrar um pagamento recebido.">PAGAMENTO / PRÓXIMO VENCIMENTO</th>
                     <th style={{ padding: '0.8rem', textAlign: 'right' }}>AÇÕES</th>
                   </tr>
                 </thead>
@@ -1107,17 +1427,17 @@ export default function Home() {
                         <td style={{ padding: '0.8rem', color: '#aeb5c6' }}>{formatarDataBrasil(ultimaPresencaPorAluno.get(String(aluno.id)))}</td>
                         <td style={{ padding: '0.8rem' }}>R$ {Number(aluno.valor_mensalidade || 0).toFixed(2)}</td>
                         <td style={{ padding: '0.8rem' }}>
-                          <span style={{ padding: '0.2rem 0.6rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold', backgroundColor: situacao === 'Em Dia' ? '#166534' : situacao === 'Pendente' ? '#92400e' : '#991b1b', color: '#fff' }}>
-                            {situacao}
+                          <span style={{ display: 'inline-flex', flexDirection: 'column', gap: '0.15rem', padding: '0.3rem 0.6rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold', backgroundColor: situacao === 'Em Dia' ? '#166534' : situacao === 'Pendente' ? '#92400e' : '#991b1b', color: '#fff' }}>
+                            {situacao}<small style={{ fontWeight: 400 }}>Vence {formatarDataBrasil(vencimentoPagamento(aluno, hoje))}</small>
                           </span>
                         </td>
                         <td style={{ padding: '0.8rem', textAlign: 'right' }}>
-                          <button type="button" onClick={() => setAlunoPerfilId(String(aluno.id))} style={{ padding: '0.3rem 0.6rem', marginRight: '0.4rem', backgroundColor: '#4f46e5', border: 'none', borderRadius: '4px', color: '#fff', cursor: 'pointer' }}>Perfil</button>
+                          <button type="button" onClick={() => { setAbaPerfilInicial('resumo'); setAlunoPerfilId(String(aluno.id)); }} style={{ padding: '0.3rem 0.6rem', marginRight: '0.4rem', backgroundColor: '#4f46e5', border: 'none', borderRadius: '4px', color: '#fff', cursor: 'pointer' }}>Perfil</button>
                           <button onClick={() => prepararEdicaoAluno(aluno)} style={{ padding: '0.3rem 0.6rem', marginRight: '0.4rem', backgroundColor: '#3b82f6', border: 'none', borderRadius: '4px', color: '#fff', cursor: 'pointer' }}>Editar</button>
                           {aluno.telefone && telefoneValido(aluno.telefone) && (
                             <a href={`https://wa.me/55${digitosTelefone(aluno.telefone)}`} target="_blank" rel="noopener noreferrer" aria-label={`Abrir WhatsApp de ${aluno.nome}`} style={{ display: 'inline-block', padding: '0.3rem 0.6rem', marginRight: '0.4rem', backgroundColor: '#166534', borderRadius: '4px', color: '#fff', textDecoration: 'none', fontSize: '0.85rem' }}>WhatsApp</a>
                           )}
-                          {aluno.status === 'Ativo' && situacaoPagamento(aluno, pagosNoMes, hoje) !== 'Em Dia' && (
+                          {aluno.status === 'Ativo' && !pagosNoMes.has(String(aluno.id)) && (
                             <button onClick={() => handleDarBaixa(aluno.id)} style={{ padding: '0.3rem 0.6rem', marginRight: '0.4rem', backgroundColor: '#22c55e', border: 'none', borderRadius: '4px', color: '#fff', cursor: 'pointer' }}>Baixa</button>
                           )}
                           <button onClick={() => handleEliminar(aluno.id)} style={{ padding: '0.3rem 0.6rem', backgroundColor: '#ef4444', border: 'none', borderRadius: '4px', color: '#fff', cursor: 'pointer' }}>Excluir</button>

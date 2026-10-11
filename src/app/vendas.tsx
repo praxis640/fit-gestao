@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { dataEmSaoPaulo } from '@/lib/faturamento';
 import { supabase } from '@/lib/supabase';
 
-type Produto = { id: string; nome: string; categoria: string; preco: number; ativo: boolean };
+type Produto = { id: string; nome: string; categoria: string; preco: number; custo: number | null; ativo: boolean };
 type Venda = {
   id: string;
   produto_nome: string;
@@ -12,6 +12,7 @@ type Venda = {
   aluno_id: string | null;
   aluno_nome: string;
   valor_unitario: number;
+  custo_unitario: number | null;
   quantidade: number;
   valor_total: number;
   data_venda: string;
@@ -41,17 +42,20 @@ export function Vendas({ userId, alunos, onVendaRegistrada }: {
   const [nomeProduto, setNomeProduto] = useState('');
   const [categoriaProduto, setCategoriaProduto] = useState('');
   const [precoProduto, setPrecoProduto] = useState('');
+  const [custoProduto, setCustoProduto] = useState('');
+  const [precoVenda, setPrecoVenda] = useState('');
+  const [custoVenda, setCustoVenda] = useState('');
   const [produtoEditando, setProdutoEditando] = useState<string | null>(null);
 
   const carregar = useCallback(async () => {
     setCarregando(true);
     const [resProdutos, resVendas] = await Promise.all([
-      supabase.from('gestao_produtos').select('id,nome,categoria,preco,ativo').eq('user_id', userId).order('nome').range(0, 999),
-      supabase.from('gestao_vendas').select('id,produto_nome,categoria,aluno_id,aluno_nome,valor_unitario,quantidade,valor_total,data_venda')
+      supabase.from('gestao_produtos').select('id,nome,categoria,preco,custo,ativo').eq('user_id', userId).order('nome').range(0, 999),
+      supabase.from('gestao_vendas').select('id,produto_nome,categoria,aluno_id,aluno_nome,valor_unitario,custo_unitario,quantidade,valor_total,data_venda')
         .eq('user_id', userId).order('data_venda', { ascending: false }).order('criado_em', { ascending: false }).range(0, 99)
     ]);
     if (resProdutos.error || resVendas.error) {
-      setErro(`Não foi possível carregar as vendas: ${(resProdutos.error || resVendas.error)?.message}. Verifique se executou a migração 20260926_vendas_produtos_financeiro.sql.`);
+      setErro(`Não foi possível carregar as vendas: ${(resProdutos.error || resVendas.error)?.message}. Execute a migração 20261006_perfil_frequencia_lucro.sql no Supabase.`);
     } else {
       setProdutos((resProdutos.data || []) as Produto[]);
       setVendas((resVendas.data || []) as Venda[]);
@@ -71,17 +75,27 @@ export function Vendas({ userId, alunos, onVendaRegistrada }: {
     return vendas.filter((venda) => venda.data_venda.startsWith(mesAtual))
       .reduce((soma, venda) => soma + Number(venda.valor_total), 0);
   }, [vendas]);
+  const lucroBrutoMes = useMemo(() => {
+    const mesAtual = dataEmSaoPaulo(new Date()).slice(0, 7);
+    return vendas.filter((venda) => venda.data_venda.startsWith(mesAtual) && venda.custo_unitario != null)
+      .reduce((soma, venda) => soma + Number(venda.valor_total) - Number(venda.custo_unitario) * Number(venda.quantidade), 0);
+  }, [vendas]);
   const produtoSelecionado = produtos.find((produto) => produto.id === produtoId && produto.ativo);
+  const custoUnitarioSelecionado = Number(custoVenda || 0);
+  const custoVendaInformado = custoVenda.trim() !== '' && Number.isFinite(custoUnitarioSelecionado) && custoUnitarioSelecionado >= 0;
+  const precoUnitarioSelecionado = Number(precoVenda || produtoSelecionado?.preco || 0);
+  const quantidadeCalculada = Math.max(1, Number(quantidade) || 1);
 
   async function salvarProduto(evento: React.FormEvent) {
     evento.preventDefault();
     const preco = Number(precoProduto);
-    if (!nomeProduto.trim() || !Number.isFinite(preco) || preco <= 0) {
-      setErro('Informe o nome do produto e um preço positivo.');
+    const custo = Number(custoProduto);
+    if (!nomeProduto.trim() || !Number.isFinite(preco) || preco <= 0 || !Number.isFinite(custo) || custo < 0) {
+      setErro('Informe o nome, preço de venda positivo e custo igual ou maior que zero.');
       return;
     }
     setSalvando(true);
-    const dados = { nome: nomeProduto.trim(), categoria: categoriaProduto.trim(), preco };
+    const dados = { nome: nomeProduto.trim(), categoria: categoriaProduto.trim(), preco, custo };
     const resposta = produtoEditando
       ? await supabase.from('gestao_produtos').update(dados).eq('id', produtoEditando).eq('user_id', userId).select('id')
       : await supabase.from('gestao_produtos').insert({ ...dados, user_id: userId }).select('id');
@@ -93,6 +107,7 @@ export function Vendas({ userId, alunos, onVendaRegistrada }: {
     setNomeProduto('');
     setCategoriaProduto('');
     setPrecoProduto('');
+    setCustoProduto('');
     setProdutoEditando(null);
     setErro('');
     setMensagem(produtoEditando ? 'Produto atualizado.' : 'Produto cadastrado no catálogo.');
@@ -117,8 +132,15 @@ export function Vendas({ userId, alunos, onVendaRegistrada }: {
       setErro('Selecione um produto, um aluno e uma quantidade inteira entre 1 e 10000.');
       return;
     }
+    const precoPraticado = Number(precoVenda || produtoSelecionado.preco);
+    const custoPraticado = Number(custoVenda);
+    if (!Number.isFinite(precoPraticado) || precoPraticado <= 0 || !custoVenda.trim() || !Number.isFinite(custoPraticado) || custoPraticado < 0) {
+      setErro('Informe um preço de venda positivo e o custo pago por unidade (zero ou maior).');
+      return;
+    }
     setSalvando(true);
-    const precoUnitario = Number(produtoSelecionado.preco);
+    const precoUnitario = precoPraticado;
+    const custoUnitario = custoPraticado;
     const { data: vendaCriada, error: erroVenda } = await supabase.from('gestao_vendas').insert({
       user_id: userId,
       produto_id: produtoSelecionado.id,
@@ -127,6 +149,7 @@ export function Vendas({ userId, alunos, onVendaRegistrada }: {
       aluno_id: alunoSelecionado.id,
       aluno_nome: alunoSelecionado.nome,
       valor_unitario: precoUnitario,
+      custo_unitario: custoUnitario,
       quantidade: quantidadeNumero,
       valor_total: precoUnitario * quantidadeNumero,
       data_venda: dataVenda
@@ -137,8 +160,10 @@ export function Vendas({ userId, alunos, onVendaRegistrada }: {
       return;
     }
     setErro('');
-    setMensagem(`Venda registrada: ${quantidadeNumero} × ${produtoSelecionado.nome} · R$ ${(Number(produtoSelecionado.preco) * quantidadeNumero).toFixed(2)}.`);
+    setMensagem(`Venda registrada: ${quantidadeNumero} × ${produtoSelecionado.nome} · lucro bruto R$ ${((precoUnitario - custoUnitario) * quantidadeNumero).toFixed(2)}.`);
     setQuantidade('1');
+    setPrecoVenda('');
+    setCustoVenda(String(custoUnitario));
     setDataVenda(dataEmSaoPaulo(new Date()));
     await Promise.all([carregar(), onVendaRegistrada()]);
   }
@@ -154,6 +179,7 @@ export function Vendas({ userId, alunos, onVendaRegistrada }: {
       <div className="aluno-kpis" style={{ marginBottom: '1.3rem' }}>
         <div><small>🛍️ Produtos ativos</small><strong>{produtos.filter((produto) => produto.ativo).length}</strong></div>
         <div><small>💵 Vendas neste mês</small><strong>R$ {totalMes.toFixed(2)}</strong></div>
+        <div><small>📈 Lucro bruto neste mês</small><strong>R$ {lucroBrutoMes.toFixed(2)}</strong></div>
         <div><small>🧾 Lançamentos recentes</small><strong>{vendas.length}</strong></div>
       </div>
 
@@ -169,16 +195,19 @@ export function Vendas({ userId, alunos, onVendaRegistrada }: {
           <label style={label}>Preço de venda (R$) *
             <input style={campo} type="number" min="0.01" step="0.01" value={precoProduto} required onChange={(e) => setPrecoProduto(e.target.value)} placeholder="0,00" />
           </label>
+          <label style={label}>Custo de compra por unidade (R$) *
+            <input style={campo} type="number" min="0" step="0.01" value={custoProduto} required onChange={(e) => setCustoProduto(e.target.value)} placeholder="0,00" />
+          </label>
           <div style={{ display: 'flex', gap: '0.6rem' }}>
             <button type="submit" disabled={salvando} style={{ ...botao, backgroundColor: '#635bfc' }}>{salvando ? 'Salvando...' : produtoEditando ? 'Salvar produto' : 'Adicionar produto'}</button>
-            {produtoEditando && <button type="button" onClick={() => { setProdutoEditando(null); setNomeProduto(''); setCategoriaProduto(''); setPrecoProduto(''); }} style={{ ...botao, backgroundColor: '#3a3f55' }}>Cancelar</button>}
+            {produtoEditando && <button type="button" onClick={() => { setProdutoEditando(null); setNomeProduto(''); setCategoriaProduto(''); setPrecoProduto(''); setCustoProduto(''); }} style={{ ...botao, backgroundColor: '#3a3f55' }}>Cancelar</button>}
           </div>
         </form>
 
         <form onSubmit={registrarVenda} style={{ display: 'grid', alignContent: 'start', gap: '0.8rem', padding: '1rem', border: '1px solid #3a3f55', borderRadius: '8px' }}>
           <h3 style={{ margin: 0 }}>Registrar venda</h3>
           <label style={label}>Produto *
-            <select style={campo} value={produtoId} required onChange={(e) => setProdutoId(e.target.value)}>
+            <select style={campo} value={produtoId} required onChange={(e) => { setProdutoId(e.target.value); const selecionado = produtos.find((p) => p.id === e.target.value); setPrecoVenda(selecionado ? String(selecionado.preco) : ''); setCustoVenda(selecionado?.custo == null ? '' : String(selecionado.custo)); }}>
               <option value="">Selecione um produto</option>
               {produtos.filter((produto) => produto.ativo).map((produto) => <option key={produto.id} value={produto.id}>{produto.nome} · R$ {Number(produto.preco).toFixed(2)}</option>)}
             </select>
@@ -189,6 +218,13 @@ export function Vendas({ userId, alunos, onVendaRegistrada }: {
               {alunos.filter((aluno) => aluno.status === 'Ativo').map((aluno) => <option key={aluno.id} value={aluno.id}>{aluno.nome}</option>)}
             </select>
           </label>
+          <label style={label}>Preço praticado por unidade (R$) *
+            <input style={campo} type="number" min="0.01" step="0.01" value={precoVenda || (produtoSelecionado ? String(produtoSelecionado.preco) : '')} required disabled={!produtoSelecionado} onChange={(e) => setPrecoVenda(e.target.value)} placeholder="0,00" />
+          </label>
+          <label style={label}>Custo pago por unidade (R$) *
+            <input style={campo} type="number" min="0" step="0.01" value={custoVenda} required disabled={!produtoSelecionado} onChange={(e) => setCustoVenda(e.target.value)} placeholder="Informe quanto pagou por unidade" />
+            <small>Preenchido com o custo cadastrado do produto; você pode ajustar para esta venda.</small>
+          </label>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.8rem' }}>
             <label style={label}>Quantidade *
               <input style={campo} type="number" min="1" max="10000" step="1" value={quantidade} required onChange={(e) => setQuantidade(e.target.value)} />
@@ -197,7 +233,15 @@ export function Vendas({ userId, alunos, onVendaRegistrada }: {
               <input style={campo} type="date" value={dataVenda} required onChange={(e) => setDataVenda(e.target.value)} />
             </label>
           </div>
-          {produtoSelecionado && <p style={{ margin: 0, color: '#86efac' }}>Total da venda: R$ {(Number(produtoSelecionado.preco) * Math.max(1, Number(quantidade) || 1)).toFixed(2)}</p>}
+          {produtoSelecionado && <div aria-live="polite" style={{ display: 'grid', gap: '0.25rem', padding: '0.75rem', background: '#13151f', borderRadius: 8 }}>
+            <span style={{ color: '#aeb5c6' }}>Total da venda: R$ {(precoUnitarioSelecionado * quantidadeCalculada).toFixed(2)}</span>
+            {custoVendaInformado ? <>
+              <span style={{ color: '#aeb5c6' }}>Custo total: R$ {(custoUnitarioSelecionado * quantidadeCalculada).toFixed(2)}</span>
+              <strong style={{ color: (precoUnitarioSelecionado - custoUnitarioSelecionado) >= 0 ? '#86efac' : '#fca5a5' }}>
+                Lucro bruto: R$ {((precoUnitarioSelecionado - custoUnitarioSelecionado) * quantidadeCalculada).toFixed(2)}
+              </strong>
+            </> : <span style={{ color: '#fbbf24' }}>Informe o custo pago para calcular o lucro.</span>}
+          </div>}
           <button type="submit" disabled={salvando || produtos.every((produto) => !produto.ativo) || alunos.every((aluno) => aluno.status !== 'Ativo')} style={{ ...botao, backgroundColor: '#166534' }}>
             {salvando ? 'Registrando...' : 'Registrar venda e lançar nos ganhos'}
           </button>
@@ -212,10 +256,10 @@ export function Vendas({ userId, alunos, onVendaRegistrada }: {
       {produtos.map((produto) => <div key={produto.id} style={{ padding: '0.8rem 0', borderBottom: '1px solid #2a2f42', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.7rem' }}>
         <div>
           <strong>{produto.nome}</strong> <span style={{ color: '#86efac' }}>R$ {Number(produto.preco).toFixed(2)}</span>
-          <div style={{ color: '#aeb5c6', fontSize: '0.85rem' }}>{produto.categoria || 'Sem categoria'} · {produto.ativo ? 'Disponível para venda' : 'Inativo'}</div>
+          <div style={{ color: '#aeb5c6', fontSize: '0.85rem' }}>{produto.categoria || 'Sem categoria'} · custo {produto.custo == null ? 'não informado' : `R$ ${Number(produto.custo).toFixed(2)}`} · lucro previsto {produto.custo == null ? '—' : `R$ ${(Number(produto.preco) - Number(produto.custo)).toFixed(2)}`} · {produto.ativo ? 'Disponível para venda' : 'Inativo'}</div>
         </div>
         <div style={{ display: 'flex', gap: '0.5rem' }}>
-          <button type="button" onClick={() => { setProdutoEditando(produto.id); setNomeProduto(produto.nome); setCategoriaProduto(produto.categoria); setPrecoProduto(String(produto.preco)); }} style={{ ...botao, backgroundColor: '#3b82f6' }}>Editar</button>
+          <button type="button" onClick={() => { setProdutoEditando(produto.id); setNomeProduto(produto.nome); setCategoriaProduto(produto.categoria); setPrecoProduto(String(produto.preco)); setCustoProduto(produto.custo == null ? '' : String(produto.custo)); }} style={{ ...botao, backgroundColor: '#3b82f6' }}>Editar</button>
           <button type="button" onClick={() => void alternarProduto(produto)} style={{ ...botao, backgroundColor: produto.ativo ? '#7c2d12' : '#166534' }}>{produto.ativo ? 'Desativar' : 'Ativar'}</button>
         </div>
       </div>)}
@@ -228,7 +272,7 @@ export function Vendas({ userId, alunos, onVendaRegistrada }: {
       {!carregando && vendas.length === 0 && <p style={{ color: '#aeb5c6' }}>Nenhuma venda registrada.</p>}
       {vendas.map((venda) => <div key={venda.id} style={{ padding: '0.8rem 0', borderBottom: '1px solid #2a2f42', display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.7rem' }}>
         <div><strong>{venda.produto_nome}</strong><div style={{ color: '#aeb5c6', fontSize: '0.85rem' }}>{venda.aluno_nome} · {venda.quantidade} × R$ {Number(venda.valor_unitario).toFixed(2)} · {venda.data_venda.split('-').reverse().join('/')}</div></div>
-        <strong style={{ color: '#86efac' }}>R$ {Number(venda.valor_total).toFixed(2)}</strong>
+        <div style={{ textAlign: 'right' }}><strong style={{ color: '#86efac' }}>Venda R$ {Number(venda.valor_total).toFixed(2)}</strong><div style={{ color: '#aeb5c6', fontSize: '0.85rem' }}>{venda.custo_unitario == null ? 'Lucro indisponível (venda antiga)' : `Custo R$ ${(Number(venda.custo_unitario) * Number(venda.quantidade)).toFixed(2)} · lucro bruto R$ ${(Number(venda.valor_total) - Number(venda.custo_unitario) * Number(venda.quantidade)).toFixed(2)}`}</div></div>
       </div>)}
     </section>
   </div>;

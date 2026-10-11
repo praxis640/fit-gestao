@@ -22,6 +22,30 @@ export function telefoneValido(telefone: string): boolean {
     !/^0+$/.test(digitos.slice(2));
 }
 
+export function digitosCpf(cpf: string): string {
+  return cpf.replace(/\D/g, '').slice(0, 11);
+}
+
+export function formatarCpf(cpf: string): string {
+  const digitos = digitosCpf(cpf);
+  if (digitos.length <= 3) return digitos;
+  if (digitos.length <= 6) return `${digitos.slice(0, 3)}.${digitos.slice(3)}`;
+  if (digitos.length <= 9) return `${digitos.slice(0, 3)}.${digitos.slice(3, 6)}.${digitos.slice(6)}`;
+  return `${digitos.slice(0, 3)}.${digitos.slice(3, 6)}.${digitos.slice(6, 9)}-${digitos.slice(9)}`;
+}
+
+export function cpfValido(cpf: string): boolean {
+  const digitos = digitosCpf(cpf);
+  if (digitos.length !== 11 || /^([0-9])\1{10}$/.test(digitos)) return false;
+  const calcular = (base: string, pesoInicial: number) => {
+    const soma = [...base].reduce((total, digito, indice) => total + Number(digito) * (pesoInicial - indice), 0);
+    const resto = (soma * 10) % 11;
+    return resto === 10 ? 0 : resto;
+  };
+  return calcular(digitos.slice(0, 9), 10) === Number(digitos[9]) &&
+    calcular(digitos.slice(0, 10), 11) === Number(digitos[10]);
+}
+
 export function dataNascimentoValida(data: string, hoje: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(data) || data > hoje) return false;
   const [ano, mes, dia] = data.split('-').map(Number);

@@ -5,7 +5,7 @@ import { situacaoPagamento, vencimentoPlano, diasAteVencimento } from '@/lib/fat
 import { gerarPdfRelatorioAcademia, type BarraRelatorio, type SecaoRelatorio } from '@/lib/relatorio-pdf';
 import { supabase } from '@/lib/supabase';
 
-type AlunoRelatorio = { id?: string | number; nome: string; telefone?: string; data_nascimento?: string | null; status: 'Ativo' | 'Inativo'; plano_nome?: string; valor_mensalidade?: number; dia_vencimento?: number; status_pagamento?: 'Em Dia' | 'Pendente' | 'Atrasado'; criado_em?: string; fim_plano?: string | null };
+type AlunoRelatorio = { id?: string | number; nome: string; telefone?: string; data_nascimento?: string | null; status: 'Ativo' | 'Inativo'; plano_nome?: string; valor_mensalidade?: number; dia_vencimento?: number; proximo_vencimento?: string | null; status_pagamento?: 'Em Dia' | 'Pendente' | 'Atrasado'; criado_em?: string; fim_plano?: string | null };
 type FrequenciaRelatorio = { aluno_id: string | number; data: string };
 type PlanoRelatorio = { nome: string; duracao_dias: number; valor: number };
 type PagamentoRelatorio = { id: number; aluno_id: string; valor: number; competencia: string };
@@ -43,6 +43,7 @@ export function Relatorios({
   const [gerando, setGerando] = useState(false);
   const [mensagem, setMensagem] = useState('');
   const [faixa, setFaixa] = useState<Faixa>('mes');
+  const [planoSelecionado, setPlanoSelecionado] = useState('todos');
   const [inicioPersonalizado, setInicioPersonalizado] = useState(`${hoje.slice(0, 7)}-01`);
   const [fimPersonalizado, setFimPersonalizado] = useState(hoje);
 
@@ -79,10 +80,16 @@ export function Relatorios({
     return { inicio: dataAnterior(hoje, Number(faixa) - 1), fim: hoje };
   }, [faixa, hoje, inicioPersonalizado, fimPersonalizado]);
 
+  const alunosDoPlano = useMemo(() => planoSelecionado === 'todos' ? alunos : alunos.filter((aluno) => (aluno.plano_nome || 'Plano não informado') === planoSelecionado), [alunos, planoSelecionado]);
+  const idsAlunosDoPlano = useMemo(() => new Set(alunosDoPlano.map((aluno) => String(aluno.id))), [alunosDoPlano]);
+  const frequenciasDoPlano = useMemo(() => planoSelecionado === 'todos' ? frequencias : frequencias.filter((r) => idsAlunosDoPlano.has(String(r.aluno_id))), [frequencias, planoSelecionado, idsAlunosDoPlano]);
+  const pagamentosDoPlano = useMemo(() => planoSelecionado === 'todos' ? pagamentos : pagamentos.filter((r) => idsAlunosDoPlano.has(String(r.aluno_id))), [pagamentos, planoSelecionado, idsAlunosDoPlano]);
+  const vendasDoPlano = useMemo(() => planoSelecionado === 'todos' ? vendas : vendas.filter((r) => r.aluno_id && idsAlunosDoPlano.has(String(r.aluno_id))), [vendas, planoSelecionado, idsAlunosDoPlano]);
+
   const dados = useMemo(() => {
     const noPeriodo = (data?: string | null) => Boolean(data && data.slice(0, 10) >= intervalo.inicio && data.slice(0, 10) <= intervalo.fim);
-    const ativos = alunos.filter((aluno) => aluno.status === 'Ativo');
-    const pagosAtual = new Set(pagamentos.filter((p) => p.competencia.startsWith(hoje.slice(0, 7))).map((p) => String(p.aluno_id)));
+    const ativos = alunosDoPlano.filter((aluno) => aluno.status === 'Ativo');
+    const pagosAtual = new Set(pagamentosDoPlano.filter((p) => p.competencia.startsWith(hoje.slice(0, 7))).map((p) => String(p.aluno_id)));
     const situacoes = { emDia: 0, pendente: 0, atrasado: 0 };
     for (const aluno of ativos) {
       const s = situacaoPagamento(aluno, pagosAtual, hoje);
@@ -93,17 +100,17 @@ export function Relatorios({
     const vencimentos = ativos.map((aluno) => ({ aluno, dias: diasAteVencimento(vencimentoPlano(aluno, planos, hoje), hoje) }));
     const planosVencidos = vencimentos.filter((x) => x.dias < 0).length;
     const planosProximos = vencimentos.filter((x) => x.dias >= 0 && x.dias <= 7).length;
-    const alunosNovos = alunos.filter((aluno) => noPeriodo(aluno.criado_em)).length;
-    const frequenciasPeriodo = frequencias.filter((registro) => noPeriodo(registro.data));
+    const alunosNovos = alunosDoPlano.filter((aluno) => noPeriodo(aluno.criado_em)).length;
+    const frequenciasPeriodo = frequenciasDoPlano.filter((registro) => noPeriodo(registro.data));
     const presencasPorAluno = new Map<string, number>();
     for (const frequencia of frequenciasPeriodo) {
       const id = String(frequencia.aluno_id);
       presencasPorAluno.set(id, (presencasPorAluno.get(id) || 0) + 1);
     }
-    const nomesAlunos = new Map(alunos.map((aluno) => [String(aluno.id), aluno.nome]));
-    const pagamentosPeriodo = pagamentos.filter((p) => noPeriodo(p.competencia));
-    const vendasPeriodo = vendas.filter((v) => noPeriodo(v.data_venda));
-    const lancamentosPeriodo = lancamentos.filter((l) => noPeriodo(l.status === 'pago' ? (l.data_pagamento || l.vencimento) : l.vencimento));
+    const nomesAlunos = new Map(alunosDoPlano.map((aluno) => [String(aluno.id), aluno.nome]));
+    const pagamentosPeriodo = pagamentosDoPlano.filter((p) => noPeriodo(p.competencia));
+    const vendasPeriodo = vendasDoPlano.filter((v) => noPeriodo(v.data_venda));
+    const lancamentosPeriodo = lancamentos.filter((l) => (planoSelecionado === 'todos' || Boolean(l.aluno_id && idsAlunosDoPlano.has(String(l.aluno_id)))) && noPeriodo(l.status === 'pago' ? (l.data_pagamento || l.vencimento) : l.vencimento));
     const receitasMensalidades = pagamentosPeriodo.reduce((s, p) => s + Number(p.valor || 0), 0);
     const receitaVendas = vendasPeriodo.reduce((s, v) => s + Number(v.valor_total || 0), 0);
     const receitasExtrasPagas = lancamentosPeriodo.filter((l) => l.tipo === 'entrada' && l.status === 'pago').reduce((s, l) => s + Number(l.valor || 0), 0);
@@ -125,7 +132,7 @@ export function Relatorios({
       const nome = aluno.plano_nome || 'Plano não informado';
       categoriasPlanos.set(nome, (categoriasPlanos.get(nome) || 0) + 1);
     }
-    const operacionaisPeriodo = registros.filter((r) => noPeriodo(r.data_registro || r.criado_em));
+    const operacionaisPeriodo = registros.filter((r) => (planoSelecionado === 'todos' || Boolean(r.aluno_id && idsAlunosDoPlano.has(String(r.aluno_id)))) && noPeriodo(r.data_registro || r.criado_em));
     const modulos = (['exercicio', 'treino', 'nutricao'] as const).map((tipo) => ({
       tipo,
       titulo: tipo === 'exercicio' ? 'Exercícios' : tipo === 'treino' ? 'Fichas de treino' : 'Rotinas de nutrição',
@@ -142,7 +149,7 @@ export function Relatorios({
 
     return {
       ativos: ativos.length,
-      inativos: alunos.length - ativos.length,
+      inativos: alunosDoPlano.length - ativos.length,
       alunosNovos,
       situacoes,
       planosVencidos,
@@ -169,7 +176,7 @@ export function Relatorios({
       barrasProdutos,
       presencaMedia: ativos.length ? frequenciasPeriodo.length / ativos.length : 0
     };
-  }, [alunos, frequencias, planos, pagamentos, vendas, lancamentos, registros, hoje, intervalo]);
+  }, [alunosDoPlano, frequenciasDoPlano, planos, pagamentosDoPlano, vendasDoPlano, lancamentos, registros, hoje, intervalo, planoSelecionado, idsAlunosDoPlano]);
 
   const secoes = useMemo<SecaoRelatorio[]>(() => {
     const linhasFinanceiras = [
@@ -208,7 +215,7 @@ export function Relatorios({
     try {
       const emitidoEm = dataBr(hoje);
       const pdf = gerarPdfRelatorioAcademia({
-        academia,
+        academia: planoSelecionado === 'todos' ? academia : `${academia} · Plano ${planoSelecionado}`,
         periodo: `${dataBr(intervalo.inicio)} a ${dataBr(intervalo.fim)}`,
         emitidoEm,
         indicadores: [
@@ -219,6 +226,7 @@ export function Relatorios({
         ],
         secoes: [...secoes, { titulo: 'Observação metodológica', linhas: [
           'Os indicadores refletem apenas informações cadastradas no sistema e o intervalo escolhido.',
+          ...(planoSelecionado === 'todos' ? [] : [`Relatório do plano ${planoSelecionado}: vendas, lançamentos e atividades sem vínculo a um aluno desse plano foram omitidos deste recorte.`]),
           'A situação de pagamento e os vencimentos de planos são uma fotografia da data de emissão; os pagamentos são agrupados pela competência registrada.',
           'Saldo operacional é um resumo dos lançamentos pagos cadastrados e não substitui escrituração contábil nem apura lucro ou impostos.'
         ] }]
@@ -227,7 +235,7 @@ export function Relatorios({
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `relatorio-${academia.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]+/g, '-').toLowerCase()}-${intervalo.inicio}-${intervalo.fim}.pdf`;
+      link.download = `relatorio-${academia.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]+/g, '-').toLowerCase()}-${planoSelecionado === 'todos' ? 'todos-os-planos' : planoSelecionado.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]+/g, '-').toLowerCase()}-${intervalo.inicio}-${intervalo.fim}.pdf`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -248,7 +256,13 @@ export function Relatorios({
     </header>
 
     <section className="reports-controls" style={card}>
-      <div><h3>Período do relatório</h3><p>Os dados e indicadores abaixo são recalculados conforme o intervalo.</p></div>
+      <div><h3>Período e plano</h3><p>Os dados e indicadores abaixo são recalculados conforme o intervalo e o tipo de plano.</p></div>
+      <label style={{ display: 'grid', gap: 6, maxWidth: 360, color: '#aeb5c6' }}>Relatório por plano
+        <select value={planoSelecionado} onChange={(e) => setPlanoSelecionado(e.target.value)} style={{ padding: '0.7rem', borderRadius: 7, border: '1px solid #3a3f55', background: '#13151f', color: '#fff' }}>
+          <option value="todos">Todos os planos</option>
+          {[...new Set([...planos.map((p) => p.nome), ...alunos.map((a) => a.plano_nome || 'Plano não informado')])].sort((a, b) => a.localeCompare(b, 'pt-BR')).map((nome) => <option key={nome} value={nome}>{nome}</option>)}
+        </select>
+      </label>
       <div className="reports-presets" role="group" aria-label="Selecionar período">
         {([['mes', 'Este mês'], ['30', '30 dias'], ['90', '90 dias'], ['ano', 'Este ano'], ['tudo', 'Todo o histórico'], ['personalizado', 'Personalizado']] as [Faixa, string][]).map(([value, label]) =>
           <button key={value} type="button" aria-pressed={faixa === value} className={faixa === value ? 'is-active' : ''} onClick={() => setFaixa(value)}>{label}</button>)}
