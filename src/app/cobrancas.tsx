@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { formatarDataBrasil, digitosTelefone, telefoneValido } from '@/lib/alunos';
 
-type Aluno = { id: string | number; nome: string; telefone?: string | null; valor_mensalidade?: number | null; proximo_vencimento?: string | null };
+type Aluno = { id?: string | number; nome: string; telefone?: string | null; valor_mensalidade?: number | null; proximo_vencimento?: string | null };
 type Cobranca = { id: string; aluno_id: string; valor: number; vencimento: string; status: string; url_fatura?: string | null; codigo_pix?: string | null; criado_em: string };
 
 const dinheiro = (n: number) => Number(n || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -58,7 +58,9 @@ export function Cobrancas({ userId, alunos }: { userId: string; alunos: Aluno[] 
     catch { setMensagem('Não foi possível copiar automaticamente. Abra a fatura para copiar o Pix.'); }
   }
 
-  const alunosAtivos = alunos.filter((aluno) => Number(aluno.valor_mensalidade || 0) > 0);
+  const alunosAtivos = alunos.filter((aluno): aluno is Aluno & { id: string | number } =>
+    aluno.id != null && Number(aluno.valor_mensalidade || 0) > 0
+  );
   return <main style={{ display: 'grid', gap: '1rem' }}>
     <section style={{ background: '#1e2230', border: '1px solid #2a2f42', borderRadius: 12, padding: '1.25rem' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>

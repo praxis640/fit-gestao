@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Image from 'next/image';
 import { supabase } from '@/lib/supabase';
 
-import { calcularIdade, digitosTelefone, formatarDataBrasil, formatarTelefone, telefoneValido } from '@/lib/alunos';
+import { calcularIdade, digitosCpf, digitosTelefone, formatarCpf, formatarDataBrasil, formatarTelefone, telefoneValido } from '@/lib/alunos';
 import { adicionarDias, dataEmSaoPaulo, vencimentoPagamento } from '@/lib/faturamento';
 import { MODELO_CONTRATO_ADULTO, MODELO_CONTRATO_MENOR, preencherModeloContrato } from '@/lib/contrato';
 
@@ -57,7 +57,7 @@ export function PerfilAluno({ aluno, hoje, pagamentos, frequencias, situacao, di
   const [observacoes, setObservacoes] = useState(aluno.observacoes || '');
   const [fotoUrl, setFotoUrl] = useState('');
   const [totalPresencas, setTotalPresencas] = useState(0);
-  const [cpfAluno, setCpfAluno] = useState(aluno.cpf || '');
+  const [cpfAluno, setCpfAluno] = useState(formatarCpf(aluno.cpf || ''));
   const [enderecoAluno, setEnderecoAluno] = useState(aluno.endereco || '');
   const [responsavelNome, setResponsavelNome] = useState(aluno.contrato_responsavel_nome || '');
   const [responsavelCpf, setResponsavelCpf] = useState(aluno.contrato_responsavel_cpf || '');
@@ -228,7 +228,7 @@ export function PerfilAluno({ aluno, hoje, pagamentos, frequencias, situacao, di
     setMensagemContrato('');
     const [resAluno, resAcademia] = await Promise.all([
       supabase.from('alunos').update({
-        cpf: cpfAluno.trim() || null,
+        cpf: cpfAluno.trim() ? digitosCpf(cpfAluno) : null,
         endereco: enderecoAluno.trim() || null,
         contrato_responsavel_nome: responsavelNome.trim(),
         contrato_responsavel_cpf: responsavelCpf.trim(),
@@ -319,7 +319,7 @@ export function PerfilAluno({ aluno, hoje, pagamentos, frequencias, situacao, di
           <p style={{ margin: 0, color: '#aeb5c6' }}>Os dados cadastrados do aluno e o plano são preenchidos no documento. Complete os campos faltantes antes de imprimir.</p>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.8rem' }}>
-          <label style={{ display: 'grid', gap: 5, color: '#aeb5c6' }}>CPF do aluno<input style={campoContrato} value={cpfAluno} onChange={(e) => setCpfAluno(e.target.value)} placeholder="CPF do aluno" /></label>
+          <label style={{ display: 'grid', gap: 5, color: '#aeb5c6' }}>CPF do aluno<input style={campoContrato} value={cpfAluno} onChange={(e) => setCpfAluno(formatarCpf(e.target.value))} placeholder="000.000.000-00" inputMode="numeric" maxLength={14} /></label>
           <label style={{ display: 'grid', gap: 5, color: '#aeb5c6' }}>Endereço do aluno<input style={campoContrato} value={enderecoAluno} onChange={(e) => setEnderecoAluno(e.target.value)} placeholder="Rua, número, bairro, cidade/UF" /></label>
           <label style={{ display: 'grid', gap: 5, color: '#aeb5c6' }}>CNPJ/CPF da academia<input style={campoContrato} value={cnpjAcademia} onChange={(e) => setCnpjAcademia(e.target.value)} placeholder="Documento da academia" /></label>
           <label style={{ display: 'grid', gap: 5, color: '#aeb5c6' }}>Endereço da academia<input style={campoContrato} value={enderecoAcademia} onChange={(e) => setEnderecoAcademia(e.target.value)} placeholder="Rua, número, bairro, cidade/UF" /></label>
