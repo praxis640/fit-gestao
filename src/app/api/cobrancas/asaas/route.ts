@@ -60,25 +60,36 @@ export async function POST(request: NextRequest) {
     .eq('user_id', userId).eq('aluno_id', aluno.id).eq('competencia', competencia).maybeSingle();
   if (pagamentoManual) return respostaErro('Já existe um pagamento registrado para este aluno nesta competência.', 409);
 
-  const { data: existente } = await supabase.from('gestao_cobrancas').select('id,status,url_fatura,codigo_pix')
+  const { data: existente } = await supabase.from('gestao_cobrancas').select('id,status,url_fatura,codigo_pix,pagamento_provedor_id')
     .eq('user_id', userId).eq('aluno_id', aluno.id).eq('competencia', competencia).maybeSingle();
   if (existente?.url_fatura && ['pendente', 'processando'].includes(existente.status)) {
     return NextResponse.json({ id: existente.id, url: existente.url_fatura, pix: existente.codigo_pix, reused: true });
   }
-  if (existente) return respostaErro(`Já existe uma cobrança nesta competência com status ${existente.status}.`, 409);
+  if (existente?.status === 'falha' && existente.pagamento_provedor_id) {
+    return respostaErro('O Asaas já recebeu uma tentativa desta cobrança. Confira a lista no Asaas antes de tentar novamente para evitar cobrança duplicada.', 409);
+  }
+  if (existente && existente.status !== 'falha') return respostaErro(`Já existe uma cobrança nesta competência com status ${existente.status}.`, 409);
 
   const { data: clienteAnterior } = await supabase.from('gestao_cobrancas').select('cliente_provedor_id')
     .eq('user_id', userId).eq('aluno_id', aluno.id).eq('ambiente_provedor', ambiente).not('cliente_provedor_id', 'is', null)
     .order('criado_em', { ascending: false }).limit(1).maybeSingle();
 
-  const { data: cobranca, error: insertError } = await supabase.from('gestao_cobrancas').insert({
-    user_id: userId, aluno_id: aluno.id, valor, competencia, vencimento, ambiente_provedor: ambiente, status: 'processando'
-  }).select('id').single();
+  const { data: cobranca, error: insertError } = existente
+    ? await supabase.from('gestao_cobrancas').update({
+      valor, vencimento, ambiente_provedor: ambiente, status: 'processando',
+      url_fatura: null, codigo_pix: null, pagamento_provedor_id: null, evento_webhook_id: null,
+      atualizado_em: new Date().toISOString()
+    }).eq('id', existente.id).eq('user_id', userId).select('id').single()
+    : await supabase.from('gestao_cobrancas').insert({
+      user_id: userId, aluno_id: aluno.id, valor, competencia, vencimento, ambiente_provedor: ambiente, status: 'processando'
+    }).select('id').single();
   if (insertError || !cobranca) return respostaErro(insertError?.message || 'Não foi possível preparar a cobrança.', 500);
 
   const baseUrl = process.env.ASAAS_ENV === 'production' ? 'https://api.asaas.com/v3' : 'https://api-sandbox.asaas.com/v3';
   const headers = { 'Content-Type': 'application/json', access_token: apiKey };
   let customerId: string | undefined = clienteAnterior?.cliente_provedor_id || undefined;
+  let etapa = 'criar pagador no Asaas';
+  let statusHttp: number | null = null;
   try {
     if (!customerId) {
       const custResp = await fetch(`${baseUrl}/customers`, {
@@ -91,12 +102,14 @@ export async function POST(request: NextRequest) {
           notificationDisabled: true
         }), cache: 'no-store'
       });
+      statusHttp = custResp.status;
       const customer = await custResp.json();
       if (!custResp.ok || !customer.id) throw new Error(customer.errors?.[0]?.description || 'O Asaas não aceitou o cadastro do pagador.');
       customerId = customer.id;
       await supabase.from('gestao_cobrancas').update({ cliente_provedor_id: customerId }).eq('id', cobranca.id).eq('user_id', userId);
     }
 
+    etapa = 'criar cobrança Pix no Asaas';
     const paymentResp = await fetch(`${baseUrl}/payments`, {
       method: 'POST', headers,
       body: JSON.stringify({
@@ -108,15 +121,20 @@ export async function POST(request: NextRequest) {
         externalReference: cobranca.id
       }), cache: 'no-store'
     });
+    statusHttp = paymentResp.status;
     const payment = await paymentResp.json();
     if (!paymentResp.ok || !payment.id || !payment.invoiceUrl) throw new Error(payment.errors?.[0]?.description || 'Não foi possível criar a cobrança Pix.');
 
+    etapa = 'buscar QR Code Pix no Asaas';
     let pix: string | null = null;
     const qrResp = await fetch(`${baseUrl}/payments/${payment.id}/pixQrCode`, { headers, cache: 'no-store' });
+    statusHttp = qrResp.status;
     if (qrResp.ok) {
       const qr = await qrResp.json();
       pix = typeof qr.payload === 'string' ? qr.payload : null;
     }
+    etapa = 'salvar cobrança no banco';
+    statusHttp = null;
     const { error: saveError } = await supabase.from('gestao_cobrancas').update({
       status: 'pendente', cliente_provedor_id: customerId, pagamento_provedor_id: payment.id,
       url_fatura: payment.invoiceUrl, codigo_pix: pix
@@ -124,7 +142,15 @@ export async function POST(request: NextRequest) {
     if (saveError) throw new Error('Cobrança criada, mas não foi possível salvar o retorno. Recarregue antes de criar outra.');
     return NextResponse.json({ id: cobranca.id, url: payment.invoiceUrl, pix, reused: false });
   } catch (error) {
+    const mensagem = error instanceof Error ? error.message : 'Falha ao criar cobrança no Asaas.';
+    // Não registrar token, dados do aluno, nem o corpo completo enviado ao provedor.
+    console.error('[asaas] Falha ao gerar cobrança', {
+      etapa,
+      statusHttp,
+      mensagem: mensagem.slice(0, 300),
+      cobrancaId: cobranca.id
+    });
     await supabase.from('gestao_cobrancas').update({ status: 'falha' }).eq('id', cobranca.id).eq('user_id', userId);
-    return respostaErro(error instanceof Error ? error.message : 'Falha ao criar cobrança no Asaas.', 502);
+    return respostaErro(mensagem, 502);
   }
 }
