@@ -38,6 +38,8 @@ export function Cobrancas({ userId, alunos }: { userId: string; alunos: Aluno[] 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void carregar();
+    const intervalo = window.setInterval(() => { void carregar(); }, 30_000);
+    return () => window.clearInterval(intervalo);
   }, [carregar]);
 
   useEffect(() => {
@@ -201,6 +203,6 @@ export function Cobrancas({ userId, alunos }: { userId: string; alunos: Aluno[] 
         return <tr key={charge.id} style={{ borderTop: '1px solid #2a2f42' }}><td style={{ padding: '.65rem' }}>{aluno?.nome || 'Aluno removido'}</td><td style={{ padding: '.65rem' }}>{dinheiro(charge.valor)}</td><td style={{ padding: '.65rem' }}>{formatarDataBrasil(charge.vencimento)}</td><td style={{ padding: '.65rem' }}>{statusLabel[charge.status] || charge.status}</td><td style={{ padding: '.65rem', display: 'flex', gap: '.5rem', flexWrap: 'wrap' }}>{charge.url_fatura && <a href={charge.url_fatura} target="_blank" rel="noreferrer" style={{ color: '#c4b5fd' }}>Abrir fatura Pix</a>}{charge.codigo_pix && <button type="button" onClick={() => void copiarPix(charge.codigo_pix!)} style={{ border: '1px solid #34394e', borderRadius: 5, padding: '.35rem .55rem', background: 'transparent', color: '#fff', cursor: 'pointer' }}>Copiar código Pix</button>}{podePrepararMensagem && <button type="button" onClick={() => abrirWhatsApp(charge)} style={{ border: 0, borderRadius: 5, padding: '.35rem .55rem', background: '#166534', color: '#fff', cursor: 'pointer' }}>Preparar WhatsApp</button>}</td></tr>;
       })}</tbody></table>}
     </section>
-    <p style={{ color: '#8a8f9d', fontSize: '.85rem', margin: 0 }}>As mensagens ficam prontas para você revisar e enviar. Para avisar que pagou, o aluno toca no link incluído ou responde à conversa e anexa o comprovante. A confirmação automática continua sendo feita pelo retorno do Asaas.</p>
+    <p style={{ color: '#8a8f9d', fontSize: '.85rem', margin: 0 }}>O WhatsApp é uma alternativa para o aluno avisar e enviar comprovante. Com o webhook do Asaas configurado, o histórico consulta o status automaticamente a cada 30 segundos e marca como pago quando o Asaas confirma o recebimento.</p>
   </main>;
 }
