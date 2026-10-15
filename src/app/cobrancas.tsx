@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { formatarDataBrasil, digitosTelefone, telefoneValido } from '@/lib/alunos';
 
 type Aluno = { id?: string | number; nome: string; telefone?: string | null; valor_mensalidade?: number | null; proximo_vencimento?: string | null };
-type Cobranca = { id: string; aluno_id: string; valor: number; vencimento: string; status: string; url_fatura?: string | null; codigo_pix?: string | null; criado_em: string };
+type Cobranca = { id: string; aluno_id: string; valor: number; vencimento: string; status: string; url_fatura?: string | null; codigo_pix?: string | null; criado_em?: string };
 type ModeloMensagem = 'cobranca' | 'lembrete' | 'atraso' | 'pagamento';
 type MensagensEditaveis = Record<ModeloMensagem, string>;
 
@@ -63,6 +63,14 @@ export function Cobrancas({ userId, alunos }: { userId: string; alunos: Aluno[] 
 
   async function gerarCobranca(alunoId = selecionado) {
     if (!alunoId) { setMensagem('Selecione um aluno ou use a lista de vencimentos próximos.'); return; }
+    const aluno = alunos.find((item) => String(item.id) === String(alunoId));
+    if (!aluno?.telefone || !telefoneValido(aluno.telefone)) {
+      setMensagem('Cadastre um telefone válido com DDD no perfil do aluno antes de gerar e enviar a cobrança pelo WhatsApp.');
+      return;
+    }
+    // Abrimos a janela diretamente no clique para evitar que o navegador bloqueie
+    // a navegação ao WhatsApp depois da resposta assíncrona da API.
+    const janelaWhatsApp = window.open('about:blank', '_blank');
     setCarregando(true); setMensagem('');
     try {
       const { data } = await supabase.auth.getSession();
@@ -72,18 +80,33 @@ export function Cobrancas({ userId, alunos }: { userId: string; alunos: Aluno[] 
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Não foi possível gerar a cobrança.');
       await carregar();
-      setMensagem('Cobrança Pix criada. A confirmação de pagamento chega automaticamente pelo webhook.');
-      if (result.url) window.open(result.url, '_blank', 'noopener,noreferrer');
+      if (!result.url) throw new Error('A cobrança foi criada, mas o Asaas não retornou o link da fatura.');
+      const linkWhatsApp = montarLinkWhatsApp({
+        id: result.id,
+        aluno_id: String(alunoId),
+        valor: Number(result.valor ?? aluno.valor_mensalidade ?? 0),
+        vencimento: String(result.vencimento || aluno.proximo_vencimento || ''),
+        status: 'pendente',
+        url_fatura: result.url
+      }, 'cobranca');
+      if (!linkWhatsApp) throw new Error('Não foi possível preparar a mensagem do WhatsApp. Confira o telefone do aluno.');
+      if (janelaWhatsApp && !janelaWhatsApp.closed) {
+        janelaWhatsApp.opener = null;
+        janelaWhatsApp.location.replace(linkWhatsApp);
+        setMensagem('Cobrança criada. O WhatsApp abriu com o link da fatura; revise a mensagem e toque em Enviar.');
+      } else {
+        setMensagem('Cobrança criada, mas o navegador bloqueou a janela do WhatsApp. Use Preparar WhatsApp no histórico de cobranças.');
+      }
     } catch (error) {
+      if (janelaWhatsApp && !janelaWhatsApp.closed) janelaWhatsApp.close();
       setMensagem(error instanceof Error ? error.message : 'Falha ao criar cobrança.');
     } finally { setCarregando(false); }
   }
 
-  function abrirWhatsApp(cobranca: Cobranca, modelo = modeloMensagem) {
+  function montarLinkWhatsApp(cobranca: Cobranca, modelo = modeloMensagem): string | null {
     const aluno = alunos.find((item) => String(item.id) === String(cobranca.aluno_id));
-    if (!aluno?.telefone || !telefoneValido(aluno.telefone)) { setMensagem('Cadastre um telefone válido com DDD no perfil do aluno.'); return; }
+    if (!aluno?.telefone || !telefoneValido(aluno.telefone)) { setMensagem('Cadastre um telefone válido com DDD no perfil do aluno.'); return null; }
     const phone = digitosTelefone(aluno.telefone);
-    const cobrancaLabel = `${dinheiro(cobranca.valor)} com vencimento em ${formatarDataBrasil(cobranca.vencimento)}`;
     const telefoneAcademiaLimpo = digitosTelefone(telefoneAcademia);
     const linkAviso = telefoneValido(telefoneAcademia)
       ? `https://wa.me/55${telefoneAcademiaLimpo}?text=${encodeURIComponent(`Olá! Sou ${aluno.nome} e já realizei o pagamento de ${dinheiro(cobranca.valor)}, com vencimento em ${formatarDataBrasil(cobranca.vencimento)}. Segue o comprovante.`)}`
@@ -96,7 +119,12 @@ export function Cobrancas({ userId, alunos }: { userId: string; alunos: Aluno[] 
       LINK_AVISAR: linkAviso || 'responda a esta conversa e envie o comprovante'
     };
     const text = mensagensEditaveis[modelo].replace(/\{\{(NOME|VALOR|VENCIMENTO|LINK_PAGAMENTO|LINK_AVISAR)\}\}/g, (_match, chave: string) => valores[chave] || '').replace(/\n[ \t]*\n[ \t]*\n/g, '\n\n').trim();
-    window.open(`https://wa.me/55${phone}?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer');
+    return `https://wa.me/55${phone}?text=${encodeURIComponent(text)}`;
+  }
+
+  function abrirWhatsApp(cobranca: Cobranca, modelo = modeloMensagem) {
+    const link = montarLinkWhatsApp(cobranca, modelo);
+    if (link) window.open(link, '_blank', 'noopener,noreferrer');
   }
 
   function salvarModelos() {
@@ -128,26 +156,26 @@ export function Cobrancas({ userId, alunos }: { userId: string; alunos: Aluno[] 
   return <main style={{ display: 'grid', gap: '1rem' }}>
     <section style={{ background: '#1e2230', border: '1px solid #2a2f42', borderRadius: 12, padding: '1.25rem' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
-        <div><h2 style={{ margin: 0 }}>Cobranças e mensagens</h2><p style={{ color: '#aeb5c6', marginBottom: 0 }}>Gere cobranças Pix e prepare mensagens para enviar pelo WhatsApp.</p></div>
+        <div><h2 style={{ margin: 0 }}>Cobranças e mensagens</h2><p style={{ color: '#aeb5c6', marginBottom: 0 }}>Gere a cobrança e abra o WhatsApp com a mensagem pronta para o aluno.</p></div>
         <div style={{ display: 'flex', gap: '.5rem', flexWrap: 'wrap' }}>
           <select aria-label="Selecionar aluno" value={selecionado} onChange={(event) => setSelecionado(event.target.value)} style={{ padding: '.7rem', borderRadius: 6, background: '#13151f', border: '1px solid #34394e', color: '#fff', minWidth: 190 }}>
             <option value="">Selecione um aluno</option>{alunosAtivos.map((aluno) => <option key={aluno.id} value={aluno.id}>{aluno.nome} · {dinheiro(Number(aluno.valor_mensalidade))}</option>)}
           </select>
-          <button type="button" onClick={() => void gerarCobranca()} disabled={carregando || !selecionado} style={{ padding: '.7rem 1rem', border: 0, borderRadius: 6, background: '#635bfc', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>{carregando ? 'Gerando…' : '＋ Gerar cobrança Pix'}</button>
+          <button type="button" onClick={() => void gerarCobranca()} disabled={carregando || !selecionado} style={{ padding: '.7rem 1rem', border: 0, borderRadius: 6, background: '#166534', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>{carregando ? 'Gerando…' : '＋ Gerar e abrir WhatsApp'}</button>
         </div>
       </div>
       {mensagem && <p role="status" style={{ marginBottom: 0, color: mensagem.includes('criada') || mensagem.includes('Modelos de mensagem salvos') ? '#86efac' : '#fbbf24' }}>{mensagem}</p>}
     </section>
     <section style={{ display: 'grid', gap: '.55rem', background: '#1e2230', border: '1px solid #2a2f42', borderRadius: 12, padding: '1rem' }}>
       <strong>Como o aluno avisa que pagou</strong>
-      <p style={{ color: '#c6cbda', margin: 0, lineHeight: 1.55 }}>Ao preparar a cobrança, a mensagem inclui a orientação para o aluno responder no WhatsApp com o comprovante. Se o telefone da academia estiver preenchido em <b>Configurações → Telefone de contato</b>, também incluiremos um link para o aluno tocar e abrir essa conversa já com o aviso escrito.</p>
+      <p style={{ color: '#c6cbda', margin: 0, lineHeight: 1.55 }}>Ao gerar a cobrança, o FitGestão prepara a fatura no Asaas e abre o WhatsApp do aluno com o link de pagamento já escrito na mensagem. Você ainda precisa revisar e tocar em <b>Enviar</b>. O aluno pode responder por ali com o comprovante.</p>
       <p style={{ color: '#aeb5c6', margin: 0, fontSize: '.88rem' }}>O aviso do aluno não confirma o pagamento sozinho. A cobrança muda para “Pago” quando o Asaas confirmar pelo webhook; se recebeu por outro meio, confira o comprovante e registre a baixa manualmente no financeiro.</p>
     </section>
     <section style={{ display: 'grid', gap: '.75rem', background: '#1e2230', border: '1px solid #2a2f42', borderRadius: 12, padding: '1rem' }}>
       <div><h3 style={{ margin: '0 0 .35rem' }}>Alunos com vencimento nos próximos 7 dias</h3><p style={{ color: '#aeb5c6', margin: 0, fontSize: '.9rem' }}>A lista usa a data de próximo vencimento cadastrada no perfil do aluno.</p></div>
       {vencimentosProximos.length === 0 ? <p style={{ color: '#aeb5c6', margin: 0 }}>Nenhum aluno com vencimento nos próximos 7 dias.</p> : <div style={{ display: 'grid', gap: '.55rem' }}>{vencimentosProximos.map(({ aluno, vencimento, dias }) => <div key={aluno.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '.75rem', flexWrap: 'wrap', padding: '.7rem', borderRadius: 8, background: '#171a25' }}>
         <div><strong>{aluno.nome}</strong><div style={{ color: '#aeb5c6', fontSize: '.88rem' }}>{dinheiro(Number(aluno.valor_mensalidade))} · vence em {formatarDataBrasil(vencimento)}{dias === 0 ? ' · vence hoje' : ` · ${dias} dia${dias === 1 ? '' : 's'}`}</div></div>
-        <button type="button" disabled={carregando} onClick={() => void gerarCobranca(String(aluno.id))} style={{ padding: '.55rem .75rem', border: 0, borderRadius: 6, background: '#635bfc', color: '#fff', fontWeight: 700, cursor: carregando ? 'wait' : 'pointer' }}>{carregando ? 'Gerando…' : 'Gerar cobrança Pix'}</button>
+        <button type="button" disabled={carregando} onClick={() => void gerarCobranca(String(aluno.id))} style={{ padding: '.55rem .75rem', border: 0, borderRadius: 6, background: '#166534', color: '#fff', fontWeight: 700, cursor: carregando ? 'wait' : 'pointer' }}>{carregando ? 'Gerando…' : 'Gerar e abrir WhatsApp'}</button>
       </div>)}</div>}
     </section>
     <section style={{ display: 'grid', gap: '.75rem', background: '#1e2230', border: '1px solid #2a2f42', borderRadius: 12, padding: '1rem' }}>
