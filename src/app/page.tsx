@@ -229,7 +229,9 @@ export default function Home() {
       const unidadesAtuais = (dataUnidades || []) as Unidade[];
       setUnidades(unidadesAtuais);
       setErroUnidades(null);
-      if (!unidadeSelecionadaId && unidadesAtuais.length) setUnidadeSelecionadaId(unidadesAtuais.find(u => u.ativa)?.id || unidadesAtuais[0].id);
+      if (unidadesAtuais.length && !unidadesAtuais.some(u => u.id === unidadeSelecionadaId)) {
+        setUnidadeSelecionadaId(unidadesAtuais.find(u => u.ativa)?.id || unidadesAtuais[0].id);
+      }
     }
 
     const { data: dataAlunos, error: erroAlunos } = await supabase
