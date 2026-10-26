@@ -14,6 +14,7 @@ import { Vendas } from './vendas';
 import { Financeiro } from './financeiro';
 import { Relatorios } from './relatorios';
 import { Cobrancas } from './cobrancas';
+import { Filiais, GestaoUnidades, type Unidade } from './filiais';
 import { Session } from '@supabase/supabase-js';
 
 interface Aluno {
@@ -33,6 +34,7 @@ interface Aluno {
   proximo_vencimento?: string | null;
   user_id?: string;
   academia_id?: string;
+  unidade_id?: string | null;
   observacoes?: string | null;
   foto_storage_path?: string | null;
   endereco?: string | null;
@@ -84,6 +86,8 @@ export default function Home() {
   const [session, setSession] = useState<Session | null>(null);
   const usuarioAtualRef = useRef<string | null>(null);
   const [alunos, setAlunos] = useState<Aluno[]>([]);
+  const [unidades, setUnidades] = useState<Unidade[]>([]);
+  const [erroUnidades, setErroUnidades] = useState<string | null>(null);
   const [frequencias, setFrequencias] = useState<Frequencia[]>([]);
   const [planos, setPlanos] = useState<Plano[]>([]);
   const [pagamentos, setPagamentos] = useState<Pagamento[]>([]);
@@ -122,6 +126,7 @@ export default function Home() {
   const [proximoVencimento, setProximoVencimento] = useState(() => proximoVencimentoDoDia(10, dataEmSaoPaulo(new Date())));
   const [fimPlano, setFimPlano] = useState(() => adicionarDias(dataEmSaoPaulo(new Date()), 30));
   const [graduacao, setGraduacao] = useState('Iniciante');
+  const [unidadeSelecionadaId, setUnidadeSelecionadaId] = useState('');
 
   // Form Plano
   const [nomePlanoForm, setNomePlanoForm] = useState('');
@@ -157,6 +162,8 @@ export default function Home() {
       if (usuarioAtualRef.current !== novoId) {
         usuarioAtualRef.current = novoId;
         setAlunos([]);
+        setUnidades([]);
+        setErroUnidades(null);
         setFrequencias([]);
         setPlanos([]);
         setPagamentos([]);
@@ -208,6 +215,24 @@ export default function Home() {
     if (!session?.user?.id) return;
     const userId = session.user.id;
     setErroDados(null);
+
+    const { data: dataUnidades, error: erroUnidade } = await supabase
+      .from('gestao_unidades')
+      .select('id, user_id, nome, endereco, telefone, ativa')
+      .eq('user_id', userId)
+      .order('nome');
+    if (usuarioAtualRef.current !== userId) return;
+    if (erroUnidade) {
+      setErroUnidades('A estrutura de filiais ainda não está ativa no banco. Aplique a migração 20261020_unidades_academia.sql no Supabase.');
+      setUnidades([]);
+    } else {
+      const unidadesAtuais = (dataUnidades || []) as Unidade[];
+      setUnidades(unidadesAtuais);
+      setErroUnidades(null);
+      if (unidadesAtuais.length && !unidadesAtuais.some(u => u.id === unidadeSelecionadaId)) {
+        setUnidadeSelecionadaId(unidadesAtuais.find(u => u.ativa)?.id || unidadesAtuais[0].id);
+      }
+    }
 
     const { data: dataAlunos, error: erroAlunos } = await supabase
       .from('alunos')
@@ -728,6 +753,10 @@ export default function Home() {
     const submitter = (e.nativeEvent as SubmitEvent).submitter;
     const abrirContrato = submitter instanceof HTMLButtonElement && submitter.dataset.acao === 'contrato';
     if (!session?.user?.id || !nome.trim() || !planoSelecionadoNome) return;
+    if (erroUnidades || !unidadeSelecionadaId) {
+      alert(erroUnidades || 'Selecione uma unidade para vincular o aluno.');
+      return;
+    }
     if (telefone && !telefoneValido(telefone)) {
       alert('Informe um telefone com DDD e 10 ou 11 dígitos, ou deixe o campo vazio.');
       return;
@@ -767,7 +796,8 @@ export default function Home() {
       fim_plano: fimPlano,
       graduacao,
       user_id: session.user.id,
-      academia_id: session.user.id
+      academia_id: session.user.id,
+      unidade_id: unidadeSelecionadaId
     };
 
     if (editandoAlunoId) {
@@ -818,12 +848,14 @@ export default function Home() {
     setDiaVencimento('10');
     setProximoVencimento(proximoVencimentoDoDia(10, dataEmSaoPaulo(new Date())));
     setGraduacao('Iniciante');
+    setUnidadeSelecionadaId(unidades.find(u => u.ativa)?.id || '');
     setFimPlano(adicionarDias(dataEmSaoPaulo(new Date()), 30));
     setEditandoAlunoId(null);
   }
 
   function prepararEdicaoAluno(aluno: Aluno) {
     setEditandoAlunoId(aluno.id || null);
+    setUnidadeSelecionadaId(aluno.unidade_id || '');
     setNome(aluno.nome);
     setTelefone(formatarTelefone(aluno.telefone || ''));
     setCpf(formatarCpf(aluno.cpf || ''));
@@ -929,6 +961,8 @@ export default function Home() {
     { nome: 'Vendas', icone: '🛍️', temSeta: false },
     { nome: 'Cobranças', icone: '💳', temSeta: false },
     { nome: 'Financeiro', icone: '💵', temSeta: false },
+    { nome: 'Filiais', icone: '🏢', temSeta: false },
+    { nome: 'Gestão', icone: '📊', temSeta: false },
     { nome: 'Relatorios', icone: '📋', temSeta: false },
     { nome: 'Configurações', icone: '⚙️', temSeta: false },
   ];
@@ -1084,6 +1118,20 @@ export default function Home() {
             mes={mesFinanceiro}
             onMesChange={setMesFinanceiro}
           />
+        )}
+
+        {!erroDados && abaAtiva === 'Filiais' && session && (
+          <>
+            {erroUnidades && <div role="alert" style={{ marginBottom: '1rem', padding: '1rem', borderRadius: 10, background: '#3b2b16', color: '#fde68a' }}>{erroUnidades}</div>}
+            <Filiais userId={session.user.id} unidades={unidades} alunos={alunos} pagamentos={pagamentos} frequencias={frequencias} hoje={hoje} onAtualizar={carregarDados} />
+          </>
+        )}
+
+        {!erroDados && abaAtiva === 'Gestão' && session && (
+          <>
+            {erroUnidades && <div role="alert" style={{ marginBottom: '1rem', padding: '1rem', borderRadius: 10, background: '#3b2b16', color: '#fde68a' }}>{erroUnidades}</div>}
+            <GestaoUnidades userId={session.user.id} unidades={unidades} alunos={alunos} pagamentos={pagamentos} frequencias={frequencias} hoje={hoje} onAtualizar={carregarDados} />
+          </>
         )}
 
         {!erroDados && abaAtiva === 'Planos' && (
@@ -1392,6 +1440,13 @@ export default function Home() {
                 <div className="aluno-form-section">
                   <h4>Matrícula e plano</h4>
                   <div className="aluno-form-grid">
+                    <label className="aluno-field">Unidade / filial *
+                      <select className="aluno-control" value={unidadeSelecionadaId} onChange={(e) => setUnidadeSelecionadaId(e.target.value)} required disabled={unidades.length === 0}>
+                        <option value="">{erroUnidades ? 'Aplique a migração no Supabase' : 'Selecione uma unidade'}</option>
+                        {unidades.filter(u => u.ativa || u.id === unidadeSelecionadaId).map(unidade => <option key={unidade.id} value={unidade.id}>{unidade.nome}{unidade.ativa ? '' : ' (inativa)'}</option>)}
+                      </select>
+                      {unidades.length === 0 && !erroUnidades && <small>Cadastre uma unidade na aba Filiais.</small>}
+                    </label>
                     <label className="aluno-field">Situação da matrícula
                       <select className="aluno-control" value={statusAluno} onChange={(e) => setStatusAluno(e.target.value as 'Ativo' | 'Inativo')}>
                         <option value="Ativo">Ativo</option><option value="Inativo">Inativo</option>
