@@ -949,9 +949,7 @@ export default function Home() {
   }
 
   if (session.user.app_metadata?.fitgestao_role === 'professor') {
-    const ownerId = String(session.user.app_metadata?.fitgestao_owner_id || '');
-    if (!ownerId) return <div role="alert" style={{ background: '#13151f', color: '#fecaca', minHeight: '100vh', display: 'grid', placeItems: 'center' }}>A conta de professor não está vinculada a uma academia. Entre em contato com o responsável.</div>;
-    return <PortalProfessor ownerId={ownerId} nome={String(session.user.user_metadata?.full_name || '')} onSair={() => { void supabase.auth.signOut(); }} />;
+    return <PortalProfessor key={session.user.id} nome={String(session.user.user_metadata?.full_name || '')} onSair={() => { void supabase.auth.signOut(); }} />;
   }
 
   const modulos: Record<string, TipoModulo> = {

@@ -6,6 +6,7 @@ import { formatarTelefone, telefoneValido } from '@/lib/alunos';
 import { catalogoExercicios, gruposMusculares } from '@/lib/catalogo-exercicios';
 import { lerFicha, textoDaFicha, type ItemFicha } from '@/lib/fichas';
 import { supabase } from '@/lib/supabase';
+import { excluirRegistroProfessor, listarRegistrosProfessor, salvarRegistrosProfessor } from '@/lib/professor-client';
 import { MODELO_CONTRATO_ADULTO, MODELO_CONTRATO_MENOR } from '@/lib/contrato';
 
 export type TipoModulo = 'exercicio' | 'treino' | 'nutricao' | 'venda';
@@ -37,7 +38,7 @@ const label: React.CSSProperties = { display: 'flex', flexDirection: 'column', g
 const botao: React.CSSProperties = { padding: '0.6rem 1rem', border: 0, borderRadius: '6px', color: '#fff', cursor: 'pointer' };
 const POR_PAGINA = 20;
 
-export function ModuloGestao({ tipo, userId, alunos }: { tipo: TipoModulo; userId: string; alunos: AlunoResumo[] }) {
+export function ModuloGestao({ tipo, userId, alunos, modoProfessor = false }: { tipo: TipoModulo; userId: string; alunos: AlunoResumo[]; modoProfessor?: boolean }) {
   const config = rotulos[tipo];
   const formularioRef = useRef<HTMLDivElement>(null);
   const consultaAtualRef = useRef(0);
@@ -82,10 +83,11 @@ export function ModuloGestao({ tipo, userId, alunos }: { tipo: TipoModulo; userI
       if (grupoFiltro) consulta = consulta.eq('categoria', grupoFiltro);
       if (buscaExercicio.trim()) consulta = consulta.ilike('titulo', `%${buscaExercicio.trim().replace(/[%_\\]/g, '')}%`);
     }
-    const { data, count, error } = await consulta.order('criado_em', { ascending: false })
-      .range(pagina * POR_PAGINA, (pagina + 1) * POR_PAGINA - 1);
+    const { data, count, error } = modoProfessor
+      ? await listarRegistrosProfessor({ tipo, pagina, limite: POR_PAGINA, aluno_id: filtroAluno, categoria: grupoFiltro, busca: buscaExercicio })
+      : await consulta.order('criado_em', { ascending: false }).range(pagina * POR_PAGINA, (pagina + 1) * POR_PAGINA - 1);
     if (numeroConsulta !== consultaAtualRef.current) return;
-    if (error) setErro(`Não foi possível carregar ${config.titulo.toLowerCase()}: ${error.message}. Verifique se executou o SQL dos módulos e da ficha.`);
+    if (error) setErro(modoProfessor ? error.message : `Não foi possível carregar ${config.titulo.toLowerCase()}: ${error.message}. Verifique se executou o SQL dos módulos e da ficha.`);
     else {
       setErro('');
       // Os dois conjuntos de colunas são conhecidos acima; o parser de tipos do Supabase exige literal estático.
@@ -93,7 +95,7 @@ export function ModuloGestao({ tipo, userId, alunos }: { tipo: TipoModulo; userI
       setTotal(count || 0);
     }
     setCarregando(false);
-  }, [userId, tipo, pagina, filtroAluno, grupoFiltro, buscaExercicio, config.titulo]);
+  }, [userId, tipo, pagina, filtroAluno, grupoFiltro, buscaExercicio, config.titulo, modoProfessor]);
 
   useEffect(() => {
     // A consulta assíncrona atualiza o estado depois de receber os registros.
@@ -103,12 +105,14 @@ export function ModuloGestao({ tipo, userId, alunos }: { tipo: TipoModulo; userI
 
   useEffect(() => {
     if (tipo !== 'treino') return;
-    supabase.from('gestao_registros').select('id,titulo,categoria').eq('user_id', userId)
-      .eq('tipo', 'exercicio').order('titulo').range(0, 999).then(({ data, error }) => {
+    const consulta = modoProfessor
+      ? listarRegistrosProfessor({ tipo: 'exercicio', limite: 1000 })
+      : supabase.from('gestao_registros').select('id,titulo,categoria').eq('user_id', userId).eq('tipo', 'exercicio').order('titulo').range(0, 999);
+    void consulta.then(({ data, error }) => {
         setExercicios(data || []);
         if (error) setErro(`Não foi possível carregar a biblioteca: ${error.message}`);
       });
-  }, [tipo, userId]);
+  }, [tipo, userId, modoProfessor]);
 
   function adicionarExercicio() {
     const exercicio = exercicios.find((item) => item.id === exercicioId);
@@ -128,8 +132,9 @@ export function ModuloGestao({ tipo, userId, alunos }: { tipo: TipoModulo; userI
   async function importarCatalogo() {
     setImportando(true);
     setMensagem('');
-    const { data: existentes, error } = await supabase.from('gestao_registros').select('titulo,categoria')
-      .eq('user_id', userId).eq('tipo', 'exercicio').range(0, 1999);
+    const { data: existentes, error } = modoProfessor
+      ? await listarRegistrosProfessor({ tipo: 'exercicio', limite: 2000 })
+      : await supabase.from('gestao_registros').select('titulo,categoria').eq('user_id', userId).eq('tipo', 'exercicio').range(0, 1999);
     if (error) {
       setErro(`Não foi possível ler a biblioteca: ${error.message}`);
       setImportando(false);
@@ -141,7 +146,9 @@ export function ModuloGestao({ tipo, userId, alunos }: { tipo: TipoModulo; userI
     let adicionados = 0;
     for (let inicio = 0; inicio < novos.length; inicio += 40) {
       const lote = novos.slice(inicio, inicio + 40).map((item) => ({ ...item, tipo: 'exercicio', user_id: userId }));
-      const { error: erroLote } = await supabase.from('gestao_registros').insert(lote);
+      const { error: erroLote } = modoProfessor
+        ? await salvarRegistrosProfessor(lote)
+        : await supabase.from('gestao_registros').insert(lote);
       if (erroLote) {
         setErro(`Foram adicionados ${adicionados} exercícios; o restante falhou: ${erroLote.message}`);
         setImportando(false);
@@ -257,12 +264,14 @@ export function ModuloGestao({ tipo, userId, alunos }: { tipo: TipoModulo; userI
       ...(tipo === 'treino' ? { ficha } : {})
     };
     setSalvando(true);
-    const resposta = editando
-      ? await supabase.from('gestao_registros').update(registro).eq('id', editando).eq('user_id', userId).eq('tipo', tipo).select('id')
-      : await supabase.from('gestao_registros').insert(registro).select('id');
+    const resposta = modoProfessor
+      ? await salvarRegistrosProfessor([registro], editando || undefined)
+      : editando
+        ? await supabase.from('gestao_registros').update(registro).eq('id', editando).eq('user_id', userId).eq('tipo', tipo).select('id')
+        : await supabase.from('gestao_registros').insert(registro).select('id');
     setSalvando(false);
     if (resposta.error) {
-      setErro('Não foi possível salvar: ' + resposta.error.message + (tipo === 'treino' ? '. Execute a migração SQL da ficha, se ainda não o fez.' : ''));
+      setErro('Não foi possível salvar: ' + resposta.error.message + (!modoProfessor && tipo === 'treino' ? '. Execute a migração SQL da ficha, se ainda não o fez.' : ''));
       return;
     }
     if (!resposta.data?.length) {
@@ -291,8 +300,9 @@ export function ModuloGestao({ tipo, userId, alunos }: { tipo: TipoModulo; userI
 
   async function excluir(registro: Registro) {
     if (!confirm(`Excluir “${registro.titulo}”?`)) return;
-    const { data, error } = await supabase.from('gestao_registros').delete()
-      .eq('id', registro.id).eq('user_id', userId).eq('tipo', tipo).select('id');
+    const { data, error } = modoProfessor
+      ? await excluirRegistroProfessor(tipo, registro.id)
+      : await supabase.from('gestao_registros').delete().eq('id', registro.id).eq('user_id', userId).eq('tipo', tipo).select('id');
     if (error || !data?.length) {
       setErro(error?.message || 'Registro não encontrado nesta conta.');
       return;
