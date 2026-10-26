@@ -118,10 +118,11 @@ begin
   if v_owner is null then raise exception 'Conta de professor inativa ou não vinculada'; end if;
 
   return query
-    select aluno.id, aluno.nome, aluno.status, aluno.plano_nome, aluno.graduacao,
-      count(frequencia.id),
-      count(frequencia.id) filter (where frequencia.data >= v_inicio_mes),
-      max(frequencia.data)
+    select aluno.id::uuid, aluno.nome::text, aluno.status::text,
+      aluno.plano_nome::text, aluno.graduacao::text,
+      count(frequencia.id)::bigint,
+      (count(frequencia.id) filter (where frequencia.data >= v_inicio_mes))::bigint,
+      max(frequencia.data)::date
     from public.alunos aluno
     left join public.frequencias frequencia
       on frequencia.aluno_id = aluno.id and frequencia.user_id = v_owner
