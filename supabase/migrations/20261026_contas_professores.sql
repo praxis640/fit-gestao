@@ -182,13 +182,13 @@ grant select, insert, update, delete on public.planos to authenticated;
 drop policy if exists fitgestao_planos_owner_access on public.planos;
 create policy fitgestao_planos_owner_access on public.planos
   for all to authenticated
-  using (user_id = (select auth.uid()) or academia_id = (select auth.uid()))
-  with check (user_id = (select auth.uid()) or academia_id = (select auth.uid()));
+  using (user_id = (select auth.uid()))
+  with check (user_id = (select auth.uid()));
 drop policy if exists fitgestao_planos_owner_guard on public.planos;
 create policy fitgestao_planos_owner_guard on public.planos as restrictive
   for all to authenticated
-  using (not (select public.fitgestao_eh_professor()) and (user_id = (select auth.uid()) or academia_id = (select auth.uid())))
-  with check (not (select public.fitgestao_eh_professor()) and (user_id = (select auth.uid()) or academia_id = (select auth.uid())));
+  using (not (select public.fitgestao_eh_professor()) and user_id = (select auth.uid()))
+  with check (not (select public.fitgestao_eh_professor()) and user_id = (select auth.uid()));
 
 -- Professores só gerenciam exercícios, treinos e nutrição; vendas e seus valores ficam bloqueados.
 drop policy if exists gestao_registros_owner_guard on public.gestao_registros;
