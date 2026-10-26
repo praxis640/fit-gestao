@@ -15,6 +15,8 @@ import { Financeiro } from './financeiro';
 import { Relatorios } from './relatorios';
 import { Cobrancas } from './cobrancas';
 import { Filiais, GestaoUnidades, type Unidade } from './filiais';
+import { Professores } from './professores';
+import { PortalProfessor } from './portal-professor';
 import { Session } from '@supabase/supabase-js';
 
 interface Aluno {
@@ -213,6 +215,7 @@ export default function Home() {
 
   async function carregarDados() {
     if (!session?.user?.id) return;
+    if (session.user.app_metadata?.fitgestao_role === 'professor') return;
     const userId = session.user.id;
     setErroDados(null);
 
@@ -292,7 +295,7 @@ export default function Home() {
   useEffect(() => {
     // Fetch after authentication changes; the loader updates state after network responses.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (session) void carregarDados();
+    if (session && session.user.app_metadata?.fitgestao_role !== 'professor') void carregarDados();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]);
 
@@ -945,6 +948,12 @@ export default function Home() {
     );
   }
 
+  if (session.user.app_metadata?.fitgestao_role === 'professor') {
+    const ownerId = String(session.user.app_metadata?.fitgestao_owner_id || '');
+    if (!ownerId) return <div role="alert" style={{ background: '#13151f', color: '#fecaca', minHeight: '100vh', display: 'grid', placeItems: 'center' }}>A conta de professor não está vinculada a uma academia. Entre em contato com o responsável.</div>;
+    return <PortalProfessor ownerId={ownerId} nome={String(session.user.user_metadata?.full_name || '')} onSair={() => { void supabase.auth.signOut(); }} />;
+  }
+
   const modulos: Record<string, TipoModulo> = {
     Exercicios: 'exercicio', Treinos: 'treino', 'Nutrição': 'nutricao', Vendas: 'venda'
   };
@@ -963,6 +972,7 @@ export default function Home() {
     { nome: 'Financeiro', icone: '💵', temSeta: false },
     { nome: 'Filiais', icone: '🏢', temSeta: false },
     { nome: 'Gestão', icone: '📊', temSeta: false },
+    { nome: 'Professores', icone: '👨‍🏫', temSeta: false },
     { nome: 'Relatorios', icone: '📋', temSeta: false },
     { nome: 'Configurações', icone: '⚙️', temSeta: false },
   ];
@@ -1132,6 +1142,10 @@ export default function Home() {
             {erroUnidades && <div role="alert" style={{ marginBottom: '1rem', padding: '1rem', borderRadius: 10, background: '#3b2b16', color: '#fde68a' }}>{erroUnidades}</div>}
             <GestaoUnidades userId={session.user.id} unidades={unidades} alunos={alunos} pagamentos={pagamentos} frequencias={frequencias} hoje={hoje} onAtualizar={carregarDados} />
           </>
+        )}
+
+        {!erroDados && abaAtiva === 'Professores' && session && (
+          <Professores key={`${session.user.id}-professores`} userId={session.user.id} />
         )}
 
         {!erroDados && abaAtiva === 'Planos' && (
