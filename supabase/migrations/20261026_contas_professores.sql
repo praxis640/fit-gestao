@@ -66,6 +66,7 @@ as $function$
   select exists (
     select 1 from public.alunos aluno
     where aluno.id = p_aluno_id
+      and p_owner_id = (select public.fitgestao_dono_academia())
       and (aluno.user_id = p_owner_id or aluno.academia_id = p_owner_id)
   );
 $function$;
